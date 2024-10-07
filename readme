@@ -1,0 +1,8 @@
+#**A Project using RL to Recover Traj**
+## 1. structure of the project:
++ Data:
+    + artificial_rts_mixed.csv: routes need to be recovered
+    + artificial_traj_mixed.csv: cellaular trajectories with spatial and temporal bias
+    + GridModeAdjacentRes.pkl: grid map of size 326 * 364
++ Figur
+## 2. 
