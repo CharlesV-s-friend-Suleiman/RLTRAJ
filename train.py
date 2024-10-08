@@ -26,16 +26,16 @@ import numpy as np
 from rl_utils.dqn_her import Buffer, DQN, MapEnv, TrainTraj
 
 # set the device & hyperparameters
-lr = 0.001
-num_episodes = 1000
+lr = 0.003
+num_episodes = 5200
 num_train = 20
 hidden_dim = 128
 gamma = .98
 epsilon = .01
 target_update = 10
 buffer_size = 10000
-minimal_size = 128
-batch_size = 128
+minimal_size = 256
+batch_size = 64
 device = torch.device("cuda")
 
 # load the mapdata and traj, set the env, buffer, agent
@@ -44,9 +44,11 @@ with open ('data/GridModesAdjacentRes.pkl','rb') as f:
 traj = pd.read_csv('data/artificial_traj_mixed.csv', )
 env = MapEnv(mapdata, traj)
 buffer = Buffer(buffer_size)
-agent = DQN(4, hidden_dim, 8, lr, gamma, epsilon, target_update, device)
+agent = DQN(4, hidden_dim, 8, lr, gamma, epsilon, target_update, device, "dueling")
 return_list = []
 
+np.random.seed(42)
+torch.manual_seed(42)
 # start training
 for i in range(10):
 

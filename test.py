@@ -1,14 +1,14 @@
 import torch
 import numpy as np
 import pickle
-from rl_utils.dqn_her import Qnet, MapEnv
+from rl_utils.dqn_her import Qnet, MapEnv, VAnet
 import pandas as pd
 import matplotlib.pyplot as plt
 
 state_dim = 4
 hidden_dim = 128
 action_dim = 8
-qnet = Qnet(state_dim, hidden_dim, action_dim)
+qnet = VAnet(state_dim, hidden_dim, action_dim)
 qnet.load_state_dict(torch.load('model/dqn_her.pth'))
 qnet.eval()
 
@@ -16,7 +16,9 @@ with open('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
 traj = pd.read_csv('data/artificial_traj_mixed.csv')
 env = MapEnv(mapdata, traj)
-num_tests = 8 # Define the number of tests
+num_tests = 8
+
+# Define the number of tests
 results = []
 
 for i in range(num_tests):

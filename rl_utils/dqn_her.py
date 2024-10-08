@@ -36,59 +36,69 @@ class MapEnv:
     def reset(self):
         # reset env by using next two traj record
         # for example, 1st interation, start = traj[0], goal = traj[1]; 2nd interation, start = traj[1], goal = traj[2]...
-        self.traj_cnt += 1 \
-            if self.traj.loc[self.traj_cnt, 'mode'] != self.traj.loc[self.traj_cnt+1, 'mode'] else 0 # if the mode is different, then reset the env
+        self.step_cnt = 0
+
+        if self.traj.loc[self.traj_cnt, 'mode'] != self.traj.loc[self.traj_cnt+1, 'mode']:
+            self.traj_cnt += 1# if the mode is different, then reset the env
         locx_start = float(self.traj.loc[self.traj_cnt, 'locx'])
         locy_start = float(self.traj.loc[self.traj_cnt, 'locy'])
         locx_end = float(self.traj.loc[self.traj_cnt + 1, 'locx'])
         locy_end = float(self.traj.loc[self.traj_cnt + 1, 'locy'])
 
-        self.mode = self.traj.loc[self.traj_cnt, 'mode']
         self.traj_cnt += 1
-        self.state = np.array([locx_start, locy_start])
-        self.goal = np.array([locx_end,locy_end])
-        self.hashmap = set()
-        self.dis = np.sqrt(np.sum(np.square(self.state - self.goal)))
-        self.expected_length = np.sqrt(np.sum(np.square(self.state - self.goal)))
-        self.current_length = 0
+        self.mode = self.traj.loc[self.traj_cnt, 'mode']
+
+        self.state = np.array([0,0])
+        self.goal = np.array([locx_end - locx_start, locy_end - locy_start])
+        # max step is the mahattan distance between start and goal
+        self.max_step = np.abs(locx_start - locx_end) + np.abs(locy_start - locy_end)
         return np.hstack((self.state, self.goal))
 
     def step(self, action:int):
         # agent will move to 8 directions,action is tuple of (dx,dy)
-        reward = 0
-        dxdy_dict = {0:(-1,1), 1:(0,1), 2:(1,1), 3:(-1,0), 4:(1,0), 5:(-1,-1), 6:(0,-1), 7:(1,-1)}
-        d = dxdy_dict[action]
-        done = False
 
-        self.current_length += 1
-        self.state[0] += d[0]
-        self.state[1] += d[1]
+        self.step_cnt += 1
+        dxdy_dict = {0:(-1,0), 1:(1,0), 2:(0,-1), 3:(0,1), 4:(-1,-1), 5:(1,-1), 6:(-1,1), 7:(1,1)}
+        d = dxdy_dict[action]
+        self.state += np.array(d)
 
         # to encourage the agent travel in the shortest path
-        dis = np.sqrt(np.sum(np.square(self.state - self.goal)))
-        if dis < self.dis:
-            reward += 2
-            self.dis = dis
+        reward = -1 if np.sqrt(np.sum(np.square(self.state - self.goal))) > 2 else 0
+        if np.sqrt(np.sum(np.square(self.state - self.goal))) <= 2 or self.step_cnt == self.max_step:
+            done = True
+        else:
+            done = False
 
         # to avoid the repeated state and encourage the agent explore by real-map
-
-        if dis <= 2:
-            reward += 10
-            done = True
-        if self.current_length >= self.expected_length:
-            done = True
 
         return np.hstack((self.state, self.goal)), reward, done
 
 
 class DQN:
     # DQN foe discrete action space
-    def __init__(self, state_dim, hidden_dim, action_dim, lr, gamma, epsilon, target_update, device):
+    def __init__(self,
+                 state_dim,
+                 hidden_dim,
+                 action_dim,
+                 lr,
+                 gamma,
+                 epsilon,
+                 target_update,
+                 device,
+                 dqn_type):
+        self.dqn_type = dqn_type
         self.action_dim = action_dim
-        # set the Q-net
-        self.qnet = Qnet(state_dim, hidden_dim, action_dim).to(device)
-        # set the target Q-net
-        self.target_qnet = Qnet(state_dim, hidden_dim, action_dim).to(device)
+
+        if dqn_type == "dueling":
+            # set the Q-net
+            self.qnet = VAnet(state_dim, hidden_dim, action_dim).to(device)
+            # set the target Q-net
+            self.target_qnet = VAnet(state_dim, hidden_dim, action_dim).to(device)
+        else:
+            # set the Q-net
+            self.qnet = Qnet(state_dim, hidden_dim, action_dim).to(device)
+            # set the target Q-net
+            self.target_qnet = Qnet(state_dim, hidden_dim, action_dim).to(device)
 
         self.optimizer = torch.optim.Adam(self.qnet.parameters(), lr=lr)
 
@@ -119,8 +129,13 @@ class DQN:
 
         q_values = self.qnet(states).gather(1, actions)
 
-        max_next_q_values = self.target_qnet(next_states).max(1)[0].view(
-            -1, 1)
+        # double DQN next 2 lines
+        max_action = self.qnet(next_states).max(1)[1].view(-1, 1)
+        max_next_q_values = self.target_qnet(next_states).gather(1, max_action)
+
+        # DQN
+        #max_next_q_values = self.target_qnet(next_states).max(1)[0].view(
+        #    -1, 1)
         q_targets = rewards + self.gamma * max_next_q_values * (1 - dones)
         dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))
         self.optimizer.zero_grad()
@@ -141,6 +156,19 @@ class Qnet(torch.nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))  # relu activation function
         return self.fc2(x)
+
+class VAnet(torch.nn.Module):
+    def __init__(self, state_dim, hidden_dim, action_dim):
+        super(VAnet, self).__init__()
+        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        self.fcA = torch.nn.Linear(hidden_dim, action_dim)
+        self.fcV = torch.nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        A = self.fcA(F.relu(self.fc1(x)))
+        V = self.fcV(F.relu(self.fc1(x)))
+        Q = V + A - A.mean(1).view(-1, 1)
+        return Q
 
 class TrainTraj:
     """
@@ -174,7 +202,7 @@ class Buffer:
     def size(self):
         return len(self.buffer)
 
-    def sample(self, batch_size, use_her, dis_threshold=0.15, her_ratio=0.8):
+    def sample(self, batch_size, use_her, dis_threshold=2, her_ratio=0.8):
         batch = dict(state=[],
                      action=[],
                      next_state=[],
