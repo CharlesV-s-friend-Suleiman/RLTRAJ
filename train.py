@@ -27,15 +27,15 @@ from rl_utils.dqn_her import Buffer, DQN, MapEnv, TrainTraj
 
 # set the device & hyperparameters
 lr = 0.003
-num_episodes = 5200
+num_episodes = 1000
 num_train = 20
 hidden_dim = 128
 gamma = .98
-epsilon = .01
+epsilon = .02
 target_update = 10
 buffer_size = 10000
-minimal_size = 256
-batch_size = 64
+minimal_size = 512
+batch_size = 128
 device = torch.device("cuda")
 
 # load the mapdata and traj, set the env, buffer, agent
@@ -50,18 +50,22 @@ return_list = []
 np.random.seed(42)
 torch.manual_seed(42)
 # start training
+
+ep = 0
 for i in range(10):
 
     with tqdm(total=int(num_episodes/10), desc = 'Iteration {}'.format(i)) as pbar:
+
         for e in range(int(num_episodes/10)):
-            state = env.reset()
+            ep += 1
+            state = env.reset(train_multi_point=True)
             traj = TrainTraj(state)
             episode_return = 0
             done = False
 
             # sample trajectory
             while not done:
-                action = agent.take_action(state)
+                action = agent.take_action(state, 0.5*e) # epsilon-greedy with decay
                 state, reward, done = env.step(action)
                 episode_return += reward
                 traj.store_step(state, action, reward, done)

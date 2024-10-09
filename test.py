@@ -22,30 +22,31 @@ num_tests = 8
 results = []
 
 for i in range(num_tests):
-    state = env.reset()
+    state = env.reset(train_multi_point =True)
     done = False
     total_reward = 0
-    start = state[:2]
-    end = state[2:]
+    distance_to_start = state[:2] # always (0, 0)
+    end_to_start = state[2:]
     path = []
 
     while not done:
-        action = qnet(torch.tensor(state, dtype=torch.float32)).argmax().item()
+        action = qnet(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax().item()
         state, reward, done = env.step(action)
         total_reward += reward
         path.append(state[:2])
 
-    results.append((start, end, total_reward, path))
-
-# Plot all paths on the same graph
-for i, (start, end, total_reward, path) in enumerate(results):
+    results.append((distance_to_start, end_to_start, total_reward, path))
+    # Plot the path and the start and end points
     path = np.array(path)
-    plt.scatter(start[0], start[1], color='green', s=100, label=f'Start {i+1}')
-    plt.scatter(end[0], end[1], color='red', s=100, label=f'End {i+1}')
-    plt.plot(path[:, 0], path[:, 1], marker='o', markersize=2, label=f'Path {i+1}')
+    plt.plot(path[:, 0] + traj.loc[i, 'locx'], path[:, 1] + traj.loc[i, 'locy'], marker = 'o',label=f'Test {i+1} Path',markersize = 1, linewidth = 1)
+    plt.scatter(distance_to_start[0] + traj.loc[i, 'locx'], distance_to_start[1] + traj.loc[i, 'locy'], marker='o', color='green',label=f'Test {i+1} Start')
+    plt.scatter(end_to_start[0] + traj.loc[i, 'locx'], end_to_start[1] + traj.loc[i, 'locy'], marker='x', color='red', label=f'Test {i+1} End')
 
 plt.xlabel('X')
 plt.ylabel('Y')
+plt.grid(True)
+plt.gca().set_aspect('equal')
+
 plt.title('Agent Paths in Environment')
 plt.show()
 
