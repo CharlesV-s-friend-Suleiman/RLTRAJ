@@ -38,7 +38,7 @@ for i in range(num_tests):
     while not done:
         action = qnet(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax().item()
         state, reward, done = env.step(action)
-        print(env.traj_cnt,  i,state, reward)
+        #print(env.traj_cnt,  i,state, reward) # print the state and reward for debugging
         total_reward += reward
         path.append(state[:2])
 
