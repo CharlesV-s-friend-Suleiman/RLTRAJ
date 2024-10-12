@@ -1,6 +1,6 @@
 """Description: This file is used to recover the trajectory from the HER samples
 @Author: yangXiao
-the pseudocode of DQN with HER
+the pseudocode of DQN/SAC with HER
 1. initialize replay buffer R
 2. initialize Q-network Q
 3. initialize target Q-network Q'== Q
@@ -25,18 +25,20 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
-from rl_utils.dqn_her import Buffer, DQN, MapEnv, TrainTraj
+from rl_utils.buffer import Buffer, TrainTraj
+from rl_utils.env import MapEnv
+from rl_utils.descrete_rl_methods import DQN
 
 # set the device & hyperparameters
 lr = 0.001
-num_episodes = 500
+num_episodes = 10000
 num_train = 20
 hidden_dim = 128
 gamma = .98
 epsilon = .02
 target_update = 10
 buffer_size = 10000
-minimal_size = 100
+minimal_size = 1000
 batch_size = 128
 device = torch.device("cuda")
 
@@ -44,7 +46,7 @@ device = torch.device("cuda")
 with open ('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
 traj = pd.read_csv('data/artificial_traj_mixed.csv', )
-env = MapEnv(mapdata, traj, train_num=8)
+env = MapEnv(mapdata, traj, train_num=1260)
 buffer = Buffer(buffer_size)
 agent = DQN(4, hidden_dim, 8, lr, gamma, epsilon, target_update, device, "dueling")
 return_list = []
@@ -98,6 +100,6 @@ plt.title('DQN with HER on {}'.format('RealMap'))
 plt.show()
 
 # save the model
-torch.save(agent.target_qnet.state_dict(), 'model/dqn_her.pth')
+torch.save(agent.target_qnet.state_dict(), 'model/allGGrecordDQN.pth')
 print('Model saved successfully!')
 

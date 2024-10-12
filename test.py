@@ -2,21 +2,22 @@ import torch
 import numpy as np
 import pickle
 
-from IPython.core.pylabtools import figsize
-
-from rl_utils.dqn_her import Qnet, MapEnv, VAnet
 import pandas as pd
 import matplotlib.pyplot as plt
+
+from rl_utils.env import MapEnv
+from rl_utils.descrete_rl_methods import VAnet, Qnet
+
 
 state_dim = 4
 hidden_dim = 128
 action_dim = 8
 qnet = VAnet(state_dim, hidden_dim, action_dim)
-qnet.load_state_dict(torch.load('model/dqn_her.pth'))
+qnet.load_state_dict(torch.load('model/allGGrecordDQN.pth'))
 qnet.eval()
 
-testid_start = 0
-num_tests = 8
+testid_start =4163
+num_tests = 6
 
 with open('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
@@ -37,6 +38,7 @@ for i in range(num_tests):
     while not done:
         action = qnet(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax().item()
         state, reward, done = env.step(action)
+        print(env.traj_cnt,  i,state, reward)
         total_reward += reward
         path.append(state[:2])
 
