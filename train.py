@@ -15,6 +15,8 @@ the pseudocode of DQN with HER
             else, set reward = -1, done = False
             update Q-network
     end for
+    update target Q-network
+end for
 """
 
 import pickle
@@ -26,15 +28,15 @@ import numpy as np
 from rl_utils.dqn_her import Buffer, DQN, MapEnv, TrainTraj
 
 # set the device & hyperparameters
-lr = 0.003
-num_episodes = 1000
+lr = 0.001
+num_episodes = 500
 num_train = 20
 hidden_dim = 128
 gamma = .98
 epsilon = .02
 target_update = 10
 buffer_size = 10000
-minimal_size = 512
+minimal_size = 100
 batch_size = 128
 device = torch.device("cuda")
 
@@ -42,7 +44,7 @@ device = torch.device("cuda")
 with open ('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
 traj = pd.read_csv('data/artificial_traj_mixed.csv', )
-env = MapEnv(mapdata, traj)
+env = MapEnv(mapdata, traj, train_num=8)
 buffer = Buffer(buffer_size)
 agent = DQN(4, hidden_dim, 8, lr, gamma, epsilon, target_update, device, "dueling")
 return_list = []
@@ -58,14 +60,14 @@ for i in range(10):
 
         for e in range(int(num_episodes/10)):
             ep += 1
-            state = env.reset(train_multi_point=True)
+            state = env.reset()
             traj = TrainTraj(state)
             episode_return = 0
             done = False
 
             # sample trajectory
             while not done:
-                action = agent.take_action(state, 0.5*e) # epsilon-greedy with decay
+                action = agent.take_action(state, e) # epsilon-greedy with decay
                 state, reward, done = env.step(action)
                 episode_return += reward
                 traj.store_step(state, action, reward, done)

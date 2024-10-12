@@ -27,30 +27,40 @@ def _allow(neighbor: int, mode: str) -> bool:
 
 
 class MapEnv:
-    def __init__(self, mapdata:dict, traj:pd.DataFrame):
+    def __init__(self, mapdata:dict, traj:pd.DataFrame, test_mode=False, testid_start=0, test_num=8, train_num = 13):
         self.mapdata = mapdata
         self.traj = traj
-        self.traj_cnt = 265 # TRAJCNT is the index of the traj record + 2
         self.hashmap = set()
         self.step_cnt = 0
+        self.train_num = train_num
+        # test mode
+        self.isTest = test_mode
+        self.testid_start = testid_start
+        self.test_num = test_num
 
-    def reset(self, train_multi_point=False):
+        self.traj_cnt = testid_start if self.isTest else 0 # TRAJCNT is the index of the traj record + 2
+
+    def reset(self):
         # reset env by using next two traj record
         # for example, 1st interation, start = traj[0], goal = traj[1]; 2nd interation, start = traj[1], goal = traj[2]...
         self.step_cnt = 0
 
-        if self.traj.loc[self.traj_cnt%8, 'mode'] != self.traj.loc[self.traj_cnt%8+1, 'mode']:
+        if self.isTest:
+            mod = self.test_num
+        else:
+            mod = self.train_num
+
+        if self.traj.loc[self.traj_cnt%mod, 'ID'] != self.traj.loc[self.traj_cnt%mod+1, 'ID']:
             self.traj_cnt += 1# if the mode is different, then reset the env
-        locx_start = float(self.traj.loc[self.traj_cnt%8, 'locx'])
-        locy_start = float(self.traj.loc[self.traj_cnt%8, 'locy'])
-        locx_end = float(self.traj.loc[self.traj_cnt%8+ 1, 'locx'])
-        locy_end = float(self.traj.loc[self.traj_cnt%8+ 1, 'locy'])
+        locx_start = float(self.traj.loc[self.traj_cnt%mod, 'locx'])
+        locy_start = float(self.traj.loc[self.traj_cnt%mod, 'locy'])
+        locx_end = float(self.traj.loc[self.traj_cnt%mod + 1 , 'locx'])
+        locy_end = float(self.traj.loc[self.traj_cnt%mod + 1, 'locy'])
 
         # when test model, using serval traj records
-        if train_multi_point:
-            self.traj_cnt += 1
+        self.traj_cnt += 1
 
-        self.mode = self.traj.loc[self.traj_cnt, 'mode']
+        self.mode = self.traj.loc[self.traj_cnt%8, 'mode']
         self.state = np.array([0,0])
         self.goal = np.array([locx_end - locx_start, locy_end - locy_start])
         # max step is the mahattan distance between start and goal
@@ -61,14 +71,14 @@ class MapEnv:
         # agent will move to 8 directions,action is tuple of (dx,dy)
 
         self.step_cnt += 1
-        dxdy_dict = {0:(-1,0), 1:(1,0), 2:(0,-1), 3:(0,1), 4:(-1,-1), 5:(1,-1), 6:(-1,1), 7:(1,1)}
+        dxdy_dict = {0:(1,0), 1:(1,1), 2:(0,1), 3:(-1,1), 4:(-1,0), 5:(-1,-1), 6:(0,-1), 7:(1,-1)}
         d = dxdy_dict[action]
         self.state += np.array(d)
 
         # to encourage the agent travel in the shortest path
-        reward = -1  if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > 1 else 0
+        reward = -1  if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > 0 else 0
 
-        if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) == 1 or self.step_cnt == 30:
+        if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) == 0 or self.step_cnt == 30:
             done = True
         else:
             done = False
@@ -113,7 +123,7 @@ class DQN:
         self.cnt = 0
 
     def take_action(self,state, episode): # use epsilon-greedy to take action
-        if np.random.random()< max(1/(1 + episode), self.epsilon):
+        if np.random.random()< self.epsilon:
             action = np.random.randint(self.action_dim)
         else:
             state = torch.tensor([state], dtype=torch.float).to(self.device)
@@ -127,7 +137,7 @@ class DQN:
         rewards = torch.tensor(transition_dict['reward'],
                                dtype=torch.float).view(-1, 1).to(self.device)
         next_states = torch.tensor(transition_dict['next_state'],
-                                   dtype=torch.float).to(self.device)
+                                dtype=torch.float).to(self.device)
         dones = torch.tensor(transition_dict['done'],
                              dtype=torch.float).view(-1, 1).to(self.device)
 
@@ -206,7 +216,7 @@ class Buffer:
     def size(self):
         return len(self.buffer)
 
-    def sample(self, batch_size, use_her, dis_threshold=1, her_ratio=0.8):
+    def sample(self, batch_size, use_her, dis_threshold=0, her_ratio=0.8):
         batch = dict(state=[],
                      action=[],
                      next_state=[],
@@ -225,7 +235,7 @@ class Buffer:
                 step_goal = np.random.randint(step_state+1, traj.length+1)
                 goal = traj.states[step_goal][:2]
                 dis = np.abs(goal[0] - state[0]) + np.abs(goal[1] - state[1])
-                reward = -1.0   if dis > dis_threshold else 0
+                reward = -1  if dis > dis_threshold else 0
                 done = False if dis > dis_threshold else True
                 state = np.hstack((state[:2], goal))
                 next_state = np.hstack((next_state[:2], goal))
