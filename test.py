@@ -6,18 +6,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from rl_utils.env import MapEnv
-from rl_utils.descrete_rl_methods import VAnet, Qnet
+from rl_utils.descrete_rl_methods import VAnet, Qnet, Policy
 
 
 state_dim = 4
 hidden_dim = 128
 action_dim = 8
 qnet = VAnet(state_dim, hidden_dim, action_dim)
-qnet.load_state_dict(torch.load('model/allGGrecordDQN.pth'))
-qnet.eval()
+qnet.load_state_dict(torch.load('model/model1015.pth'))
 
-testid_start =4163
-num_tests = 6
+actor_net = Policy(state_dim, hidden_dim, action_dim)
+actor_net.load_state_dict(torch.load('model/SAC_10000_eps_inrealmap.pth'))
+
+qnet.eval()
+actor_net.eval()
+
+testid_start =0
+num_tests = 8
 
 with open('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
@@ -36,7 +41,7 @@ for i in range(num_tests):
     path = []
 
     while not done:
-        action = qnet(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax().item()
+        action = actor_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax().item()
         state, reward, done = env.step(action)
         #print(env.traj_cnt,  i,state, reward) # print the state and reward for debugging
         total_reward += reward

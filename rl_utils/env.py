@@ -62,7 +62,6 @@ class MapEnv:
 
         self.mode = self.traj.loc[self.traj_cnt%mod, 'mode']
         self.state = np.array([0,0])
-        print(self.traj_cnt%mod,locx_start, locy_start, locx_end, locy_end)
         self.goal = np.array([locx_end - locx_start, locy_end - locy_start])
         # max step is the mahattan distance between start and goal
         self.max_step = np.abs(locx_start - locx_end) + np.abs(locy_start - locy_end)
