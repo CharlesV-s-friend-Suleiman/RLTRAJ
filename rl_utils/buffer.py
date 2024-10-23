@@ -19,10 +19,10 @@ class TrainTraj:
         self.done = []
         self.length = 0
 
-    def store_step(self, state, action, reward, down):
+    def store_step(self, state, action, reward, done):
         self.actions.append(action)
         self.rewards.append(reward)
-        self.done.append(down)
+        self.done.append(done)
         self.states.append(state)
         self.length += 1
 
@@ -39,7 +39,7 @@ class Buffer:
     def size(self):
         return len(self.buffer)
 
-    def sample(self, batch_size, use_her, dis_threshold=0, her_ratio=0.8):
+    def sample(self, batch_size, use_her, dis_threshold=1, her_ratio=0.8):
         batch = dict(state=[],
                      action=[],
                      next_state=[],
@@ -48,7 +48,7 @@ class Buffer:
         for _ in range(batch_size):
             traj = random.sample(self.buffer,1)[0]
             step_state = np.random.randint(traj.length)
-            state = traj.states[step_state]
+            state = traj.states[step_state] # state: dim = 12, [curx, cury, goalx, goaly, neighbor x 8]
             next_state = traj.states[step_state+1]
             action = traj.actions[step_state]
             reward = traj.rewards[step_state]
@@ -58,10 +58,12 @@ class Buffer:
                 step_goal = np.random.randint(step_state+1, traj.length+1)
                 goal = traj.states[step_goal][:2]
                 dis = np.abs(goal[0] - state[0]) + np.abs(goal[1] - state[1])
-                reward = -1  if dis > dis_threshold else 0
+                reward = 0
+                reward -= 3 if state[action+4]==0 else 0
+                reward -= 1 if dis > dis_threshold else 0
                 done = False if dis > dis_threshold else True
-                state = np.hstack((state[:2], goal))
-                next_state = np.hstack((next_state[:2], goal))
+                state = np.hstack((state[:2], goal, state[4:]))
+                next_state = np.hstack((next_state[:2], goal, next_state[4:]))
 
             batch['state'].append(state)
             batch['next_state'].append(next_state)

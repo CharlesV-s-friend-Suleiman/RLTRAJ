@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import random
 import collections
+from rl_utils.tools import mapdata_to_modelmatrix
+
 
 # DQN method, Q-net for DQN and VA-net for duelDQN, DQN method is unstable and the return will wander
 class DQN:
@@ -17,7 +19,14 @@ class DQN:
                  epsilon,
                  target_update,
                  device,
-                 dqn_type):
+                 dqn_type,
+                 using_realmap=False,
+                 mapdata=None,
+                 mode=None):
+        self.using_realmap = using_realmap
+        if self.using_realmap:
+            # mapdata is 4x326x364, 4 is the mode, 326 is the number of grids in x-axis, 364 is the number of grids in y-axis
+            self.mapdata = mapdata_to_modelmatrix(mapdata, 326, 364)
         self.dqn_type = dqn_type
         self.action_dim = action_dim
 
@@ -39,13 +48,75 @@ class DQN:
         self.target_update = target_update
         self.device = device
         self.cnt = 0
+        self.visited_states = set()  # Set to store visited states
+        self.mode = mode
 
-    def take_action(self,state): # use epsilon-greedy to take action
+    def _get_feasible_actions(self, state, delta, size='5x5') ->list[int]:
+        # state:[pos_x, pos_y, end_x, end_y, delta_x, delta_y]
+        realmap_x = int(state[0]+delta[0])
+        realmap_y = int(state[1]+delta[1])
+        action_set = set()
+        actionlist = []
+        if self.using_realmap: # TODO: API for mode identification, now all modes are GG when train and TS when test
+            movements = {
+                0: (1, 0),  # Right
+                1: (1, 1),  # Down-Right
+                2: (0, 1),  # Down
+                3: (-1, 1),  # Down-Left
+                4: (-1, 0),  # Left
+                5: (-1, -1),  # Up-Left
+                6: (0, -1),  # Up
+                7: (1, -1)  # Up-Right
+            }
+            if size == '5x5':
+                # Define the 3x3 sub-grids and their corresponding actions
+                sub_grids = {
+                    (0, 0): [0, 1, 2],  # Bottom-left
+                    (0, 1): [2, 3, 4],  # Bottom-right
+                    (1, 0): [4, 5, 6],  # Top-left
+                    (1, 1): [6, 7, 0]  # Top-right
+                }
+
+                for (dx, dy), actions in sub_grids.items():
+                    for i in range(3):
+                        for j in range(3):
+                            new_x, new_y = realmap_x + dx * 2 + i, realmap_y + dy * 2 + j
+                            if 0 <= new_x < len(self.mapdata["GG"]) and 0 <= new_y < len(self.mapdata["GG"][0]):
+                                if self.mapdata["GG"][new_x][new_y] == 1:
+                                    action_set.update(actions)
+                actionlist = list(action_set)
+
+            if size=='3x3':
+                for action, (dx, dy) in movements.items():
+                    new_x, new_y = realmap_x + dx, realmap_y + dy
+                    if 0 <= new_x < len(self.mapdata["GG"]) and 0 <= new_y < len(self.mapdata["GG"][0]):
+                        if self.mapdata["GG"][new_x][new_y] == 1:
+                            actionlist.append(action)
+
+        return actionlist
+
+    def take_action(self,state, delta)->int: # use epsilon-greedy to take action
+        # Avoid step not in feasible actions
+        #feasible_action = self._get_feasible_actions(state, delta, size='3x3')
+        #print(feasible_action,state)
+
         if np.random.random()< self.epsilon:
             action = np.random.randint(self.action_dim)
         else:
-            state = torch.tensor([state], dtype=torch.float).to(self.device)
-            action = self.qnet(state).argmax().item()
+            state_tensor = torch.tensor([state], dtype=torch.float).to(self.device)
+            # the q_values is self.qnet(state) for DQN and self.qnet(state).max(1)[0] for duelDQN
+            q_values = self.qnet(state_tensor)
+
+            action = q_values.argmax().item()
+
+            # Avoid revisiting states
+            for _ in range(self.action_dim):
+                if tuple(state[:2]) in self.visited_states: #or action not in feasible_action:
+                    q_values[0, action] = -float('inf')  # Set Q-value to negative infinity and resample
+                    action = q_values.argmax().item()
+                else:
+                    break
+        self.visited_states.add(tuple(state[:2]))
         return action
 
     def update(self, transition_dict):
@@ -70,6 +141,7 @@ class DQN:
         #    -1, 1)
         q_targets = rewards + self.gamma * max_next_q_values * (1 - dones)
         dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))
+        loss = float(dqn_loss)
         self.optimizer.zero_grad()
         dqn_loss.backward()
         self.optimizer.step()
@@ -78,6 +150,7 @@ class DQN:
             self.target_qnet.load_state_dict(
                 self.qnet.state_dict())  #
         self.cnt += 1
+        return loss
 
 class Qnet(torch.nn.Module):
     def __init__(self,state_dim, hidden_dim ,action_dim):
@@ -88,6 +161,7 @@ class Qnet(torch.nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))  # relu activation function
         return self.fc2(x)
+
 
 class VAnet(torch.nn.Module):
     def __init__(self, state_dim, hidden_dim, action_dim):
@@ -118,7 +192,8 @@ class Policy(torch.nn.Module): #TODO: add the action information of real-map roa
 class SAC:
     def __init__(self, state_dim, hidden_dim, action_dim,
                  actor_lr, critic_lr,
-                 alpha_lr, target_entropy,gamma, tau, device):
+                 alpha_lr, target_entropy,gamma, tau, device,
+                 using_realmap=False, mapdata=None):
 
         # policy net
         self.actor = Policy(state_dim, hidden_dim, action_dim).to(device)
@@ -142,13 +217,26 @@ class SAC:
         self.gamma = gamma
         self.tau = tau
         self.device = device
+        self.visited_states = set()  # Set to store visited states
 
-    def take_action(self, state):
+        # real map
+        if using_realmap:
+            self.mapdata = mapdata_to_modelmatrix(mapdata, 326, 364)
+
+
+
+    def take_action(self, state, mapinfo):
         state = torch.tensor([state], dtype=torch.float).to(self.device)
         action_prob = self.actor(state)
         action_dist = torch.distributions.Categorical(action_prob)
         action = action_dist.sample()
 
+        # Avoid revisiting states
+        for _ in range(action_prob.shape[1]):
+            if tuple(state[:2]) in self.visited_states:
+                action_prob[0, action] = -float('inf')
+
+        self.visited_states.add(tuple(state[:2]))
         return action.item()
 
     def calculate_target(self, rewards, next_states, done):
