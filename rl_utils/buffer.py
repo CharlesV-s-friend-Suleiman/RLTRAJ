@@ -39,7 +39,7 @@ class Buffer:
     def size(self):
         return len(self.buffer)
 
-    def sample(self, batch_size, use_her, dis_threshold=1, her_ratio=0.8):
+    def sample(self, batch_size, use_her, dis_threshold=0, her_ratio=0.8):
         batch = dict(state=[],
                      action=[],
                      next_state=[],

@@ -1,5 +1,8 @@
 import pickle
 import PIL
+from sympy.abc import alpha
+
+
 def mapdata_to_modelmatrix(mapdata: dict, n_row, n_col) -> dict[str: list[list:int]]:
     """
     Convert the mapdata to a matrix that can be used as input to the model
@@ -34,17 +37,26 @@ def get_neighbor(modelmatrix, x, y):
     :param y: int, the y coordinate of the grid
     :return: list, the neighbor of the grid (x, y) from (1,0) to (1,-1)
     """
+    try:
+        xmax = len(modelmatrix)
+        ymax = len(modelmatrix[0])
+    except:
+        print('Input Data Out of Range: ',type(modelmatrix), x, y)
+        return [0,0,0,0,0,0,0,0]
+
     neighbors = []
     directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
 
     for dx, dy in directions:
-        nx, ny = x + dx, y + dy
-        if 0 <= nx < len(modelmatrix) and 0 <= ny < len(modelmatrix[0]):
+        nx, ny = int(x) + dx, int(y) + dy
+        if 0 <= nx < xmax and 0 <= ny < ymax:
             neighbors.append(modelmatrix[nx][ny])
         else:
             neighbors.append(0)  # or some other value indicating out of bounds
 
     return neighbors
+
+
 
 ### test the function ###
 if __name__ == '__main__':
@@ -56,10 +68,10 @@ if __name__ == '__main__':
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
 
     modes = ['TG', 'GG', 'GSD', 'TS']
-    back_imgs = ['../figur/TG_realworld.jpg',
-                 '../figur/GG_realworld.jpg',
-                 '../figur/GSD_realworld.jpg',
-                 '../figur/TG_realworld.jpg']
+    back_imgs = ['../figur/realmap.jpg',
+                 '../figur/realmap.jpg',
+                 '../figur/realmap.jpg',
+                 '../figur/realmap.jpg']
 
     for i, mode in enumerate(modes):
         ax = axs[i // 2, i % 2]
@@ -76,11 +88,11 @@ if __name__ == '__main__':
 
 
     for i, mode in enumerate(modes):
-        fig, ax = plt.subplots(figsize=(10, 10))
+        fig, ax = plt.subplots(figsize=(20, 20))
         matrix = matrice[mode]
         x, y = zip(*[(i, j) for i in range(len(matrix)) for j in range(len(matrix[0])) if matrix[i][j] == 1])
-        ax.imshow(mpimg.imread(back_imgs[i]), extent=[0, len(matrix), 0, len(matrix[0])], aspect='equal', alpha=0.2)
-        ax.scatter(x, y, s=0.5)
+        ax.imshow(mpimg.imread(back_imgs[i]), extent=[0, len(matrix), 0, len(matrix[0])], aspect='equal', alpha=1)
+        ax.scatter(x, y, s=1/100,alpha=1, c='red',marker='o')
         ax.set_xlim(0, len(matrix))
         ax.set_ylim(0, len(matrix[0]))
         ax.axis('off')  # Turn off the axis

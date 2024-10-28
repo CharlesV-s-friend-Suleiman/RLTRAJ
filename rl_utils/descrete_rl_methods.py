@@ -110,12 +110,12 @@ class DQN:
             action = q_values.argmax().item()
 
             # Avoid revisiting states
-            for _ in range(self.action_dim):
-                if tuple(state[:2]) in self.visited_states: #or action not in feasible_action:
-                    q_values[0, action] = -float('inf')  # Set Q-value to negative infinity and resample
-                    action = q_values.argmax().item()
-                else:
-                    break
+            # for _ in range(self.action_dim):
+            #     if tuple(state[:2]) in self.visited_states: #or action not in feasible_action:
+            #         q_values[0, action] = -float('inf')  # Set Q-value to negative infinity and resample
+            #         action = q_values.argmax().item()
+            #     else:
+            #         break
         self.visited_states.add(tuple(state[:2]))
         return action
 

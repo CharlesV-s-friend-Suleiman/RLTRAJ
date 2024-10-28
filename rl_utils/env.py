@@ -64,7 +64,7 @@ class MapEnv:
         self.mode = self.traj.loc[self.traj_cnt%mod, 'mode']
         # delta is the relative position of the start_position and 0,0; delta only change when start_position change(when reset)
         # neighbor is the 8 elements list of the grid not including itself, 0-8 are the neighbors from 1,0 to 1,-1
-        self.neighbor = np.array(get_neighbor(self.mapdata, locx_start, locy_start))
+        self.neighbor = np.array(get_neighbor(self.mapdata[self.mode], locx_start, locy_start))
         self.delta = np.array([locx_start, locy_start])
         self.state = np.array([0,0])
         self.goal = np.array([locx_end - locx_start, locy_end - locy_start])
@@ -87,10 +87,10 @@ class MapEnv:
             reward -= 3
 
         # update neighbor
-        self.neighbor = np.array(get_neighbor(self.mapdata, self.state[0]+self.delta[0], self.state[1]+self.delta[1]))
+        self.neighbor = np.array(get_neighbor(self.mapdata[self.mode], self.state[0]+self.delta[0], self.state[1]+self.delta[1]))
 
         # to encourage the agent travel in the shortest path
-        reward -= 1  if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > 1 else 0
+        reward -= 1  if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > 0 else 0
 
         if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) == 0 or self.step_cnt == 30:
             done = True

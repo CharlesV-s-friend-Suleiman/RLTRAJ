@@ -15,7 +15,7 @@ state_dim = 12
 hidden_dim = 128
 action_dim = 8
 qnet = VAnet(state_dim, hidden_dim, action_dim)
-qnet.load_state_dict(torch.load('model/DQN_10000_eps_inrealmap_1023.pth'))
+qnet.load_state_dict(torch.load('model/DQN_10000_eps_inrealmap_1024_4_1_nhash.pth'))
 
 actor_net = Policy(state_dim, hidden_dim, action_dim)
 actor_net.load_state_dict(torch.load('model/SAC_10000_eps_inrealmap_1022.pth'))
@@ -23,18 +23,22 @@ actor_net.load_state_dict(torch.load('model/SAC_10000_eps_inrealmap_1022.pth'))
 qnet.eval()
 actor_net.eval()
 
-testid_start = 0
-num_tests = 8
+testid_start = 3689
+num_tests = 5
+
 
 with open('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
 traj = pd.read_csv('data/artificial_traj_mixed.csv')
+trajmode = traj.loc[testid_start, 'mode']
+
 env = MapEnv(mapdata, traj, test_mode=True, testid_start=testid_start, test_num=num_tests,
              use_real_map=True, realmap_row=326, realmap_col=364)
 
 # Define the number of tests
 results = []
-background_img = mpimg.imread('figur/GG_plot_with_mapdata.png')
+backimg_path = 'figur/{}_plot_with_mapdata.png'.format(trajmode)
+background_img = mpimg.imread(backimg_path)
 x_min, y_min =  11111,11111
 x_max, y_max = -1,-1
 for i in range(num_tests):
@@ -60,20 +64,36 @@ for i in range(num_tests):
         plt.plot(path[:, 0] + traj.loc[i+testid_start, 'locx'], path[:, 1] + traj.loc[i+testid_start, 'locy'], marker = 'o',label=f'Test {i+1} Path',markersize = 1, linewidth = 1)
         plt.scatter(distance_to_start[0] + traj.loc[i+testid_start, 'locx'], distance_to_start[1] + traj.loc[i+testid_start, 'locy'], marker='o', color='green',label=f'Test {i+1} Start')
         plt.scatter(end_to_start[0] + traj.loc[i+testid_start, 'locx'], end_to_start[1] + traj.loc[i+testid_start, 'locy'], marker='x', color='red', label=f'Test {i+1} End')
-        x_min = min(x_min, distance_to_start[0] + traj.loc[i+testid_start, 'locx'])
-        y_min = min(y_min, distance_to_start[1] + traj.loc[i+testid_start, 'locy'])
-        x_max = max(x_max, distance_to_start[0] + traj.loc[i+testid_start, 'locx'])
-        y_max = max(y_max, distance_to_start[1] + traj.loc[i+testid_start, 'locy'])
+        x_min = min(x_min, distance_to_start[0] + traj.loc[i+testid_start, 'locx'])-2
+        y_min = min(y_min, distance_to_start[1] + traj.loc[i+testid_start, 'locy'])-2
+        x_max = max(x_max, distance_to_start[0] + traj.loc[i+testid_start, 'locx'])+2
+        y_max = max(y_max, distance_to_start[1] + traj.loc[i+testid_start, 'locy'])+2
 
+height, width = background_img.shape[0], background_img.shape[1]
+ratio = ((height / 326) *( width / 364))**0.5
+x_min_idx = int(x_min * ratio)
+x_max_idx = int(x_max * ratio)
+y_min_idx = int(y_min * ratio)
+y_max_idx = int(y_max * ratio)
 
-# bg img size is 868x969; x,y size is 326x364 ;when transiting, x_new = x*2.662, y_new = y*2.662
-sliced_background_img = background_img[int(x_min*2.662): int(x_max*2.662),int(y_min*2.662):int(y_max*2.662)]
+# Print the calculated indices for debugging
+print(f"x_min_idx: {x_min_idx}, x_max_idx: {x_max_idx}")
+print(f"y_min_idx: {y_min_idx}, y_max_idx: {y_max_idx}")
+
+# Ensure indices are within the valid range
+x_min_idx = max(0, x_min_idx)
+x_max_idx = min(background_img.shape[0], x_max_idx)
+y_min_idx = max(0, y_min_idx)
+y_max_idx = min(background_img.shape[1], y_max_idx)
+
+# Slice the background image
+sliced_background_img = background_img[height-y_max_idx: height-y_min_idx,x_min_idx:x_max_idx]
 # Display the background image with the same limits
-#plt.imshow(sliced_background_img,extent=[x_min,y_min,x_max,y_max],aspect='equal', alpha=0.5)
+plt.imshow(sliced_background_img, extent=[x_min, x_max, y_min, y_max],aspect='equal', alpha=1)
+
 plt.xlabel('X')
 plt.ylabel('Y')
 plt.grid(True)
-
 plt.title('Agent Paths in Environment')
 plt.show(figsize=(20, 16))
 
