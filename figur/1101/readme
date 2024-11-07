@@ -1,0 +1,6 @@
+# plot0，plot1，plot4：loss figur of training on shuffle data
+# ___, max_step, lr, step_reward, action_reward, final_reward
+# p0,  50,   0.001, -4, -1, 40
+# p1,  50,    0.003, -4, -1, 40
+# p4,  100,    .001, -4, -1, 40
+# p6,  100,   .001, -4, -1, 40
