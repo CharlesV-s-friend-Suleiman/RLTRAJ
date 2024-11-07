@@ -27,10 +27,11 @@ def _allow(neighbor: int, mode: str) -> bool:
 
 
 class MapEnv:
-    def __init__(self, mapdata:dict, traj:pd.DataFrame, test_mode=False, testid_start=0, test_num=8, train_num = 13,use_real_map=False,realmap_row=326, realmap_col = 364):
+    def __init__(self, mapdata:dict, traj:pd.DataFrame, trainid_start=0, test_mode=False, testid_start=0, test_num=8, train_num = 13,use_real_map=False,realmap_row=326, realmap_col = 364):
         self.traj = traj
         self.step_cnt = 0
         self.train_num = train_num
+        self.trainid_start = trainid_start
         if use_real_map:
             self.mapdata = mapdata_to_modelmatrix(mapdata, realmap_row, realmap_col)
 
@@ -38,7 +39,7 @@ class MapEnv:
         self.isTest = test_mode
         self.testid_start = testid_start
         self.test_num = test_num
-
+        self.distance_hold =1 if test_mode else 1
         self.traj_cnt = 0 # TRAJCNT is the index of the traj record + 2
 
     def reset(self):
@@ -48,15 +49,17 @@ class MapEnv:
 
         if self.isTest:
             mod = self.test_num
+            start_id = self.testid_start
         else:
             mod = self.train_num
+            start_id = self.trainid_start
 
         if self.traj.loc[self.traj_cnt%mod, 'ID'] != self.traj.loc[self.traj_cnt%mod+1, 'ID']:
             self.traj_cnt += 1# if the mode is different, then reset the env
-        locx_start = float(self.traj.loc[self.testid_start+self.traj_cnt%mod, 'locx'])
-        locy_start = float(self.traj.loc[self.testid_start+self.traj_cnt%mod, 'locy'])
-        locx_end = float(self.traj.loc[self.testid_start+self.traj_cnt%mod + 1 , 'locx'])
-        locy_end = float(self.traj.loc[self.testid_start+self.traj_cnt%mod + 1, 'locy'])
+        locx_start = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locx'])
+        locy_start = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locy'])
+        locx_end = float(self.traj.loc[start_id+self.traj_cnt%mod + 1 , 'locx'])
+        locy_end = float(self.traj.loc[start_id+self.traj_cnt%mod + 1, 'locy'])
 
         # when test model, using serval traj records
         self.traj_cnt += 1
@@ -84,15 +87,15 @@ class MapEnv:
 
         # not in the available neighbor
         if self.neighbor[action]==0:
-            reward -= 3
+            reward -=0.25
 
         # update neighbor
         self.neighbor = np.array(get_neighbor(self.mapdata[self.mode], self.state[0]+self.delta[0], self.state[1]+self.delta[1]))
 
         # to encourage the agent travel in the shortest path
-        reward -= 1  if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > 0 else 0
+        reward -= 1 if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > self.distance_hold else 0
 
-        if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) == 0 or self.step_cnt == 30:
+        if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) == self.distance_hold or self.step_cnt == 100:
             done = True
         else:
             done = False

@@ -109,14 +109,14 @@ class DQN:
 
             action = q_values.argmax().item()
 
-            # Avoid revisiting states
-            # for _ in range(self.action_dim):
-            #     if tuple(state[:2]) in self.visited_states: #or action not in feasible_action:
-            #         q_values[0, action] = -float('inf')  # Set Q-value to negative infinity and resample
-            #         action = q_values.argmax().item()
-            #     else:
-            #         break
-        self.visited_states.add(tuple(state[:2]))
+        #     # Avoid revisiting states
+        #     for _ in range(self.action_dim):
+        #         if tuple(state[:2]) in self.visited_states: #or action not in feasible_action:
+        #             q_values[0, action] = -float('inf')  # Set Q-value to negative infinity and resample
+        #             action = q_values.argmax().item()
+        #         else:
+        #             break
+        # self.visited_states.add(tuple(state[:2]))
         return action
 
     def update(self, transition_dict):
@@ -155,29 +155,41 @@ class DQN:
 class Qnet(torch.nn.Module):
     def __init__(self,state_dim, hidden_dim ,action_dim):
         super(Qnet, self).__init__()
-        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
-        self.fc2 = torch.nn.Linear(hidden_dim, action_dim)
+        # self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        # self.fc2 = torch.nn.Linear(hidden_dim, action_dim)
+        self.fc1 = torch.nn.Linear(state_dim, 128) # 4 modes
+        self.fc2 = torch.nn.Linear(128, hidden_dim)
+        self.fc4 = torch.nn.Linear(hidden_dim, 4)
+        self.fc3 = torch.nn.Linear(4, action_dim)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))  # relu activation function
-        return self.fc2(x)
+        # x = F.relu(self.fc1(x))  # relu activation function
+        # return self.fc2(x)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc4(x))
+        return self.fc3(x)
 
 
 class VAnet(torch.nn.Module):
     def __init__(self, state_dim, hidden_dim, action_dim):
         super(VAnet, self).__init__()
-        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        # self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        self.fc0 = torch.nn.Linear(state_dim, 128) # 4 modes
+
+        self.fc1 = torch.nn.Linear(128, hidden_dim)
         self.fcA = torch.nn.Linear(hidden_dim, action_dim)
         self.fcV = torch.nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
+        x = F.relu(self.fc0(x))
         A = self.fcA(F.relu(self.fc1(x)))
         V = self.fcV(F.relu(self.fc1(x)))
         Q = V + A - A.mean(1).view(-1, 1)
         return Q
 
 # SAC method to balance the exploration and exploitation
-class Policy(torch.nn.Module): #TODO: add the action information of real-map road network
+class Policy(torch.nn.Module):
     def __init__(self, state_dim, hidden_dim, action_dim):
         super(Policy, self).__init__()
         self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
@@ -301,4 +313,6 @@ class SAC:
         # soft update the target net
         self.soft_update(self.critic1, self.target_critic1)
         self.soft_update(self.critic2, self.target_critic2)
+
+        return float(critic_1_loss),float(actor_loss)
 

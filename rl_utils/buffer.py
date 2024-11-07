@@ -19,10 +19,11 @@ class TrainTraj:
         self.done = []
         self.length = 0
 
-    def store_step(self, state, action, reward, done):
+    def store_step(self, state, action, reward, max_step ,done):
         self.actions.append(action)
         self.rewards.append(reward)
         self.done.append(done)
+        self.env_max_step = max_step
         self.states.append(state)
         self.length += 1
 
@@ -39,7 +40,7 @@ class Buffer:
     def size(self):
         return len(self.buffer)
 
-    def sample(self, batch_size, use_her, dis_threshold=0, her_ratio=0.8):
+    def sample(self, batch_size, use_her, dis_threshold=1, her_ratio=0.8):
         batch = dict(state=[],
                      action=[],
                      next_state=[],
@@ -59,7 +60,7 @@ class Buffer:
                 goal = traj.states[step_goal][:2]
                 dis = np.abs(goal[0] - state[0]) + np.abs(goal[1] - state[1])
                 reward = 0
-                reward -= 3 if state[action+4]==0 else 0
+                reward -= 0.25 if state[action+4]==0 else 0
                 reward -= 1 if dis > dis_threshold else 0
                 done = False if dis > dis_threshold else True
                 state = np.hstack((state[:2], goal, state[4:]))

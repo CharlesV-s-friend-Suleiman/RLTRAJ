@@ -30,27 +30,32 @@ from rl_utils.env import MapEnv
 from rl_utils.descrete_rl_methods import DQN, SAC
 
 # load the mapdata and traj, set the buffer
-buffer_size = 10000
+buffer_size = 15000
 
 with open ('data/GridModesAdjacentRes.pkl','rb') as f:
     mapdata = pickle.load(f)
-traj = pd.read_csv('data/artificial_traj_mixed.csv', )
+shuffle_traj = pd.read_csv('data/artificial_traj_mixed_shuffled.csv')
+
 buffer = Buffer(buffer_size)
 return_list = []
 
 # set the hyperparameters for all methods
-gamma = .98
-minimal_size = 1000
+gamma = .96
+minimal_size = 2000
 batch_size = 128
 device = torch.device("cuda")
 hidden_dim = 128
-env = MapEnv(mapdata, traj, train_num=1260, use_real_map=True, realmap_row=326, realmap_col=364)
+env = MapEnv(mapdata, shuffle_traj, train_num=5200,trainid_start=0, use_real_map=True, realmap_row=326, realmap_col=364)
+
+#trainwithTGTS_env=MapEnv(mapdata,traj, train_num=2000, trainid_start=3276, use_real_map=True,realmap_row=326, realmap_col=364)
+#trainwithTG_env=MapEnv(mapdata,traj, train_num=800, trainid_start=4437, use_real_map=True,realmap_row=326, realmap_col=364)
+
 
 # set the device & hyperparameters for DQN
 lr = 0.001
-num_episodes = 10000
+num_episodes = 15000
 num_train = 20
-epsilon = .02
+epsilon = .05
 target_update = 10
 
 # set the device & hyperparameters for SAC
@@ -84,10 +89,11 @@ def train(agent, env, episodes, agent_type, use_her, **kwargs):
                 # sample trajectory
                 while not done:
                     mapinfo = env.delta
+                    env_max_step = env.max_step
                     action = agent.take_action(state, mapinfo)  # epsilon-greedy with decay
                     state, reward, done = env.step(action)
                     episode_return += reward
-                    traj.store_step(state, action, reward, done)
+                    traj.store_step(state, action, reward, env_max_step, done)
                 buffer.add_traj(traj)
                 return_list.append(episode_return)
 
@@ -141,10 +147,10 @@ def train(agent, env, episodes, agent_type, use_her, **kwargs):
     ax2.set_ylabel('Loss', color=color)  # we already handled the x-label with ax1
 
     if agent_type == 'SAC':
-        ax2.plot(range(1000, 1000 + len(critic_losses)), critic_losses, color=color, label='Critic Loss')
-        ax2.plot(range(1000, 1000 + len(actor_losses)), actor_losses, color='tab:green', label='Actor Loss')
+        ax2.plot(range(minimal_size, minimal_size + len(critic_losses)), critic_losses, color=color, label='Critic Loss')
+        ax2.plot(range(minimal_size, minimal_size + len(actor_losses)), actor_losses, color='tab:green', label='Actor Loss')
     elif agent_type == 'DQN':
-        ax2.plot(range(1000, 1000 + len(losses)), losses, color=color, label='Loss')
+        ax2.plot(range(minimal_size, minimal_size + len(losses)), losses, color=color, label='Average Q-Loss per 10 episodes')
 
     ax2.tick_params(axis='y', labelcolor=color)
 
