@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 
 # Load the data
-df = pd.read_csv('data/artificial_traj_mixed.csv')
+df = pd.read_csv('data/artificial_traj_mixed_train.csv')
 
 # Define colors for each mode
 mode_colors = {

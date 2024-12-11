@@ -6,7 +6,6 @@ import random
 import collections
 
 
-
 class TrainTraj:
     """
     in this code, traj means the list of [locx, locy,t]; while traintraj means list of [s,a,r,s',g] in RL
@@ -60,7 +59,7 @@ class Buffer:
                 goal = traj.states[step_goal][:2]
                 dis = np.abs(goal[0] - state[0]) + np.abs(goal[1] - state[1])
                 reward = 0
-                reward -= 0.25 if state[action+4]==0 else 0
+                reward -= 0.33 if state[action+4]==0 else 0
                 reward -= 1 if dis > dis_threshold else 0
                 done = False if dis > dis_threshold else True
                 state = np.hstack((state[:2], goal, state[4:]))

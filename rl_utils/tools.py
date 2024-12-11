@@ -5,9 +5,9 @@ from sympy.abc import alpha
 
 def mapdata_to_modelmatrix(mapdata: dict, n_row, n_col) -> dict[str: list[list:int]]:
     """
-    Convert the mapdata to a matrix that can be used as input to the model
+    Convert the mapdata to a matrix that can be used as input to the lower_model
     :param mapdata: dict, the mapdata
-    :return: dict, the matrix that can be used as input to the model
+    :return: dict, the matrix that can be used as input to the lower_model
     """
     modelmatrix = {"TG": [[0 for _ in range(n_row)] for _ in range(n_col)],
                      "GG": [[0 for _ in range(n_row)] for _ in range(n_col)],
@@ -29,7 +29,7 @@ def mapdata_to_modelmatrix(mapdata: dict, n_row, n_col) -> dict[str: list[list:i
     return modelmatrix
 
 
-def get_neighbor(modelmatrix, x, y):
+def get_neighbor(modelmatrix, x, y)->list:
     """
     Get the neighbor of the grid (x, y)
     :param modelmatrix: list[list], the modelmatrix

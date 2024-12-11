@@ -1,6 +1,6 @@
 import pandas as pd
 
-df = pd.read_csv('artificial_traj_mixed.csv')
+df = pd.read_csv('test_traj_lower.csv')
 
 def modetoint(mode):
     if mode == 'static':
@@ -15,4 +15,4 @@ def modetoint(mode):
         return 6
 
 df['mode'] = df['mode'].apply(modetoint)
-df.to_csv('artificial_traj_mixed.csv', index=False)
+df.to_csv('test_traj_lower.csv', index=False)

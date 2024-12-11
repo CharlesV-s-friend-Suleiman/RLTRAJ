@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import random
 import collections
+
+dxdy_dict = {0: (1, 0), 1: (1, 1), 2: (0, 1), 3: (-1, 1), 4: (-1, 0), 5: (-1, -1), 6: (0, -1), 7: (1, -1)}
 from rl_utils.tools import mapdata_to_modelmatrix
 
 
@@ -58,16 +60,7 @@ class DQN:
         action_set = set()
         actionlist = []
         if self.using_realmap: # TODO: API for mode identification, now all modes are GG when train and TS when test
-            movements = {
-                0: (1, 0),  # Right
-                1: (1, 1),  # Down-Right
-                2: (0, 1),  # Down
-                3: (-1, 1),  # Down-Left
-                4: (-1, 0),  # Left
-                5: (-1, -1),  # Up-Left
-                6: (0, -1),  # Up
-                7: (1, -1)  # Up-Right
-            }
+            movements = dxdy_dict
             if size == '5x5':
                 # Define the 3x3 sub-grids and their corresponding actions
                 sub_grids = {
@@ -95,7 +88,7 @@ class DQN:
 
         return actionlist
 
-    def take_action(self,state, delta)->int: # use epsilon-greedy to take action
+    def take_action(self,state)->int: # use epsilon-greedy to take action
         # Avoid step not in feasible actions
         #feasible_action = self._get_feasible_actions(state, delta, size='3x3')
         #print(feasible_action,state)
@@ -118,6 +111,19 @@ class DQN:
         #             break
         # self.visited_states.add(tuple(state[:2]))
         return action
+
+    def take_2d_action(self, state, delta) -> tuple:
+        actions = [-1, 0, 1]
+        if np.random.random() < self.epsilon:
+            action_x = np.random.choice(actions)
+            action_y = np.random.choice(actions)
+        else:
+            state_tensor = torch.tensor([state], dtype=torch.float).to(self.device)
+            q_values = self.qnet(state_tensor)
+            action_x = actions[q_values[0, 0].argmax().item()]
+            action_y = actions[q_values[0, 1].argmax().item()]
+
+        return (action_x, action_y)
 
     def update(self, transition_dict):
         states = torch.tensor(transition_dict['state'],
