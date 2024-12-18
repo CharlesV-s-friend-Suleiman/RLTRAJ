@@ -30,8 +30,8 @@ with open ('data/GridModesAdjacentRes.pkl','rb') as f:
 trajdata = pd.read_csv('data/train10000.csv')
 
 # load hyperparameters for upper model
-state_dim = 5
-action_dim = 4
+state_dim = 6
+action_dim = 20
 hidden_dim = 128
 lr = 0.003
 gamma = 0.9
@@ -69,7 +69,7 @@ def train_uppermodel(agent, env, episodes,agent_type, use_her=False):
                 # sample
                 while not done:
                     a = agent.take_action(s)
-                    s, r, done = env.step(a)
+                    s, r, done = env.step_with20action(a)
                     episode_return += r
                     traj.store_step(s,a,r,None,done) # max_step is not used in upper model
                 buffer.add_traj(traj)

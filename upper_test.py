@@ -10,8 +10,8 @@ from rl_utils.env import MapEnv, dxdy_dict, UpperEnv
 from rl_utils.descrete_rl_methods import VAnet, Qnet, Policy
 
 
-state_dim = 5
-action_dim = 4
+state_dim = 6
+action_dim = 20
 hidden_dim = 128
 
 # num_tests is the end idx in train10000.csv
@@ -19,7 +19,7 @@ num_test = 10000
 num_trajs = 500
 action_dict = {0:'GSD',1:'GG',2:'TS',3:'TG'}
 
-uppermodel_path = 'upper_model/DQN_20000_eps_inrealmap_129.pth'
+uppermodel_path = 'upper_model/DQN_20000_eps_inrealmap_1217.pth'
 qnet = VAnet(state_dim, hidden_dim, action_dim)
 qnet.load_state_dict(torch.load(uppermodel_path))
 qnet.eval()
@@ -48,6 +48,12 @@ totalamount_dict = {'GSD':0,'GG':0,'TS':0,'TG':0}
 matchrated_dict = {'GSD':0,'GG':0,'TS':0,'TG':0}
 totalroad_dict = {'GSD':0,'GG':0,'TS':0,'TG':0}
 
+
+matchrated_dict_correct = {'GSD':[],'GG':[],'TS':[],'TG':[]}
+matchrated_dict_wrong = {'GSD':[],'GG':[],'TS':[],'TG':[]}
+
+wronglist = [[]]
+
 for i in range(num_trajs):
     s = upper_env.reset()
     done = False
@@ -60,20 +66,32 @@ for i in range(num_trajs):
         current_idx = (upper_env.traj_idx + upper_env.step_cnt)
         current_record_idx = traj.loc[current_idx, 'ID']
         x,y = traj.loc[current_idx, 'locx'], traj.loc[current_idx, 'locy']
-        print(current_idx,'stepcnt',upper_env.step_cnt,'stepstart',upper_env.traj_idx,current_record_idx,x,y, 'predict',action_dict[action],'true',traj.loc[current_idx,'mode'])
+        #print(current_idx,'stepcnt',upper_env.step_cnt,'stepstart',upper_env.traj_idx,current_record_idx,x,y, 'predict',action_dict[action],'true',traj.loc[current_idx,'mode'])
+        s, reward, done = upper_env.step_with20action(action)
         totalamount_dict[traj.loc[current_idx,'mode']] += 1
-        accuracy_dict[traj.loc[current_idx,'mode']] += int(action_dict[action]==traj.loc[current_idx,'mode'])
+        accuracy_dict[traj.loc[current_idx,'mode']] += int(upper_env.upper_mode ==traj.loc[current_idx,'mode'])
+        test_results.append(int(upper_env.upper_mode==traj.loc[current_idx,'mode']))
 
-        test_results.append(int(action_dict[action]==traj.loc[current_idx,'mode']))
-        s, reward, done = upper_env.step(action)
         total, match = upper_env.is_match_compute_tuple
-        totalroad_dict[action_dict[action]] += total
-        matchrated_dict[action_dict[action]] += match
+        totalroad_dict[upper_env.upper_mode] += total
+        matchrated_dict[upper_env.upper_mode] += match
 
-        print(action_dict[action],' mode match rate:', match/(total+0.1),match,total)
+        # to plot the match rate of lower mode for each mode when correct prediction
+        if upper_env.upper_mode == traj.loc[current_idx,'mode']:
+            matchrated_dict_correct[upper_env.upper_mode].append(match/(total+0.1))
+        else:
+            matchrated_dict_wrong[upper_env.upper_mode].append(match/(total+0.1))
+            # record the wrong prediction id, upper mode, lower mode, match rate
+            wronglist.append([current_idx, upper_env.upper_mode, traj.loc[current_idx,'mode'], match/(total+0.1)])
+
+        print(upper_env.upper_mode,' mode match rate:', match/(total+0.1),match,total)
         t_upper_dict[traj.loc[current_idx,'mode']].append(upper_env.t_upper)
-        t_lower_dict[action_dict[action]].append(upper_env.t_lower)
+        t_lower_dict[upper_env.upper_mode].append(upper_env.t_lower)
 
+
+# save the wrong prediction id, upper mode, lower mode, match rate
+wronglist = pd.DataFrame(wronglist, columns=['ID', 'UpperMode', 'LowerMode', 'MatchRate'])
+wronglist.to_csv('data/wronglist.csv', index=False)
 
 
 print('the accuracy of prediction is :', np.average(test_results), uppermodel_path)
@@ -106,6 +124,23 @@ ax1.legend()
 ax2.set_xlabel('t values')
 ax2.set_ylabel('Frequency')
 ax2.set_title('Distribution of t_lower')
+ax2.legend()
+
+plt.tight_layout()
+plt.show()
+
+# plot the match rate of lower mode for each mode when correct prediction and wrong prediction
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex="all", sharey="all", figsize=(10, 8))
+for label in matchrated_dict_correct.keys():
+    ax1.hist(matchrated_dict_correct[label], bins=100, alpha=0.5, color=colors[label], linestyle='dashed', label=f'{label} correct prediction')
+    ax2.hist(matchrated_dict_wrong[label], bins=100, alpha=0.5, color=colors[label], linestyle='solid', label=f'{label} wrong prediction')
+ax1.set_ylabel('Frequency')
+ax1.set_title('Match rate of correct prediction')
+ax1.legend()
+
+ax2.set_xlabel('t values')
+ax2.set_ylabel('Frequency')
+ax2.set_title('Match rate of wrong prediction')
 ax2.legend()
 
 plt.tight_layout()

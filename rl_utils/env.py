@@ -242,12 +242,12 @@ class UpperEnv:
 
         t_lower = 0
         v_expected = mode_v_dict[upper_mode]/60
-        v_rural = 0.6 # 36km/h
+        v_rural = 0.5 # 36km/h
 
         for i, coord in enumerate(lower_path[1:]):
             x, y = int(coord[0]), int(coord[1])
             self.is_match_compute_tuple[0] += 1
-            if self.mapmatrice[modelist[action]][x][y]==0:
+            if self.mapmatrice[upper_mode][x][y]==0:
                 t_lower += (abs(lower_path[i][0]-lower_path[i-1][0]) + abs(lower_path[i][1]-lower_path[i-1][1]))/v_rural
                 #print('lower path is blocked, and travel in rural area', x, y)
             else:
@@ -287,19 +287,19 @@ class UpperEnv:
             x2, y2 = goal_pos
             for neighbor in get_neighbor(self.mapmatrice[modelist[mode_idx]], x1, y1):
                 if neighbor == 1:
-                    self.rts_nums[mode_idx] += neighbor
+                    self.rts_nums[mode_idx] = neighbor
             for neighbor in get_neighbor(self.mapmatrice[modelist[mode_idx]], x2, y2):
                 if neighbor ==1:
-                    self.rts_nums[mode_idx] += neighbor
+                    self.rts_nums[mode_idx] = neighbor
 
             # TS can travel on TG
             if mode_idx == 2:
                 for neighbor in get_neighbor(self.mapmatrice[modelist[3]], x1, y1):
                     if neighbor == 1:
-                        self.rts_nums[mode_idx] += neighbor
+                        self.rts_nums[mode_idx] = neighbor
                 for neighbor in get_neighbor(self.mapmatrice[modelist[3]], x2, y2):
                     if neighbor == 1:
-                        self.rts_nums[mode_idx] += neighbor
+                        self.rts_nums[mode_idx] = neighbor
 
         # using v_avg as state, v_avg_upper = distance/delta_t
         self.v_avg = 0
@@ -321,7 +321,141 @@ class UpperEnv:
 
         #relative_pos = [goal_pos[0]-start_pos[0], goal_pos[1]-start_pos[1]]
         relative_dis = ((goal_pos[0]-start_pos[0])**2 + (goal_pos[1]-start_pos[1])**2)**0.5
+
         return np.array([relative_dis] + self.rts_nums), reward, done
+
+    def step_with20action(self, action:int):
+        """
+
+        :param action:int , [0,20,30...400] denoted discreted v
+        :return: next_state, reward, done
+        """
+        action_mode_duels = ['GSD', 'GG', 'TG','TS']
+
+        matchedmode = None
+        min_v_bias = 400
+        for mode in action_mode_duels:
+            if min_v_bias > abs(action*20 - mode_v_dict[mode]):
+                matchedmode = mode
+            min_v_bias = min(abs(action*20 - mode_v_dict[mode]), min_v_bias)
+
+        upper_mode = matchedmode
+        reward = 0
+
+        # t_lower is the time cost of the lower model to reach the goal
+        lower_env = MapEnv(self.mapdata, self.traj, test_mode=True,
+                           testid_start=(self.traj_idx+self.step_cnt)%self.mod, test_num=self.train_num,
+                           use_real_map=True, realmap_row=326, realmap_col=364,
+                           is_lower=True, dummy_mode=upper_mode)
+        #print('upper' , 'step',self.step_cnt, 'traj+start id ',self.traj_idx)
+        lower_state = lower_env.reset()
+        lower_done = False
+        lower_set = set()
+        lower_set.add(tuple(lower_state[:2]))
+        lower_step_cnt = 0
+        lower_path = []
+        self.is_match_compute_tuple = [0,0] #total, match
+
+        while not lower_done:
+            lower_step_cnt += 1
+            q_values = self.lower_agent(torch.tensor(lower_state, dtype=torch.float32).unsqueeze(0))
+            sorted_actions = torch.sort(q_values, descending=True).indices.squeeze().tolist()
+            for j in range(len(sorted_actions)):
+                tmp_action = sorted_actions[j]
+                if tuple(lower_state[:2] + dxdy_dict[tmp_action]) not in lower_set:
+                    lower_action = tmp_action
+                    break
+            lower_next_state, lower_reward, lower_done = lower_env.step(lower_action)
+            #print("    lower_next_state:", lower_next_state[:4], "lower_reward:", lower_reward, "lower_done:", lower_done)
+            lower_state = lower_next_state
+            lower_set.add(tuple(lower_state[:2]))
+            lower_path.append(lower_state[:2]+ lower_env.delta)
+
+        t_lower = 0
+        v_expected = mode_v_dict[upper_mode]/60
+        v_rural = 0.5 # 30km/h
+
+        for i, coord in enumerate(lower_path[1:]):
+            x, y = int(coord[0]), int(coord[1])
+            self.is_match_compute_tuple[0] += 1
+            if self.mapmatrice[upper_mode][x][y]==0:
+                t_lower += (abs(lower_path[i][0]-lower_path[i-1][0]) + abs(lower_path[i][1]-lower_path[i-1][1]))/v_rural
+                #print('lower path is blocked, and travel in rural area', x, y)
+            else:
+                self.is_match_compute_tuple[1] += 1
+                t_lower += (abs(lower_path[i][0]-lower_path[i-1][0])+ abs(lower_path[i][1]-lower_path[i-1][1]))/v_expected
+
+        # t_upper calculated by the given data
+        idx=(self.traj_idx+self.step_cnt)% self.mod
+        if idx == 0:
+            t_upper = 0
+        else:
+            t_upper = max(0,self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod +1, 'time'] \
+                      - self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod, 'time'])
+
+        if self.isTest:
+            print('in upper iteration ',self.step_cnt,'t_lower:', t_lower, 't_upper:', t_upper, 'predict mode', upper_mode)
+
+        # calculate the difference t_lower and t_upper in each step, record the percentage of traj in mode
+        #reward -= abs(t_lower - t_upper) *(1 - (self.is_match_compute_tuple[1]/(self.is_match_compute_tuple[0]+0.1)))
+
+
+
+        self.t_lower = t_lower
+        self.t_upper = t_upper
+
+        # update state of the upper model
+        self.step_cnt += 1
+        self.r_avg += (reward-self.r_avg)/(self.step_cnt+1)
+        #print('current reward:', reward, 'avg reward:', self.r_avg)
+
+        # embedding the map info to the state
+        #print('upper step',self.step_cnt, 'traj+start id-1 ',self.traj_idx,'curidx',self.traj_idx+self.step_cnt-1,
+        #      'maxstep',self.max_step, 'coord', self.traj.loc[self.traj_idx+self.step_cnt-1,'locx'], self.traj.loc[self.traj_idx+self.step_cnt-1,'locy'])
+        start_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod - 1, ['locx', 'locy']])
+        goal_pos =tuple( self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod , ['locx', 'locy']])
+        self.rts_nums = [0,0,0,0]
+
+       # state computing with neighbor rts
+        for mode_idx in range(4):
+            x1, y1 = start_pos
+            x2, y2 = goal_pos
+            for neighbor in get_neighbor(self.mapmatrice[modelist[mode_idx]], x1, y1):
+                if neighbor == 1:
+                    self.rts_nums[mode_idx] += neighbor
+            for neighbor in get_neighbor(self.mapmatrice[modelist[mode_idx]], x2, y2):
+                if neighbor ==1:
+                    self.rts_nums[mode_idx] += neighbor
+
+            # TS can travel on TG
+            if mode_idx == 2:
+                for neighbor in get_neighbor(self.mapmatrice[modelist[3]], x1, y1):
+                    if neighbor == 1:
+                        self.rts_nums[mode_idx] += neighbor
+                for neighbor in get_neighbor(self.mapmatrice[modelist[3]], x2, y2):
+                    if neighbor == 1:
+                        self.rts_nums[mode_idx] += neighbor
+
+        # using v_avg as state, v_avg_upper = distance/delta_t
+        self.v_avg = 0
+        v_upper = abs(goal_pos[0] - start_pos[0]) + abs(goal_pos[1] - start_pos[1])/(t_upper+1)
+        self.v_avg += (v_upper - self.v_avg)/(self.step_cnt+1)
+
+        # calculate reward using v
+        reward -= (abs(v_upper-v_expected)/v_expected) *(1-(self.is_match_compute_tuple[1]/(self.is_match_compute_tuple[0]+0.1)))
+
+
+        if self.step_cnt == self.max_step:
+            self.traj_idx += self.step_cnt
+            done = True
+        else:
+            done = False
+
+        #relative_pos = [goal_pos[0]-start_pos[0], goal_pos[1]-start_pos[1]]
+        relative_dis = ((goal_pos[0]-start_pos[0])**2 + (goal_pos[1]-start_pos[1])**2)**0.5
+        self.upper_mode = upper_mode
+        return np.array([self.v_avg ,relative_dis] + self.rts_nums), reward, done
+
 
     def reset(self):
         """
@@ -358,6 +492,5 @@ class UpperEnv:
         relative_pos = [goal_pos[0]-start_pos[0], goal_pos[1]-start_pos[1]]
         relative_dis = ((goal_pos[0]-start_pos[0])**2 + (goal_pos[1]-start_pos[1])**2)**0.5
 
-        action = np.random.randint(4)
-        return np.array( [relative_dis] + self.rts_nums)
+        return np.array( [0,relative_dis] + self.rts_nums)
 

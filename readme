@@ -5,4 +5,9 @@
     + artificial_traj_mixed.csv: cellaular trajectories with spatial and temporal bias
     + GridModeAdjacentRes.pkl: grid map of size 326 * 364
 + Figur
-## 2. 
++ lower_model
+    + data: data for training the lower model
+    + model: the lower model
+
+## 2.
+    +
