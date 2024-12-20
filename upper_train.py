@@ -30,7 +30,7 @@ with open ('data/GridModesAdjacentRes.pkl','rb') as f:
 trajdata = pd.read_csv('data/train10000.csv')
 
 # load hyperparameters for upper model
-state_dim = 6
+state_dim = 5
 action_dim = 20
 hidden_dim = 128
 lr = 0.003

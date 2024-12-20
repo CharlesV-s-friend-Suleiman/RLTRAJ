@@ -10,7 +10,7 @@ from rl_utils.env import MapEnv, dxdy_dict, UpperEnv
 from rl_utils.descrete_rl_methods import VAnet, Qnet, Policy
 
 
-state_dim = 6
+state_dim = 5
 action_dim = 20
 hidden_dim = 128
 
@@ -19,7 +19,7 @@ num_test = 10000
 num_trajs = 500
 action_dict = {0:'GSD',1:'GG',2:'TS',3:'TG'}
 
-uppermodel_path = 'upper_model/DQN_20000_eps_inrealmap_1217.pth'
+uppermodel_path = 'upper_model/DQN_20000_eps_inrealmap_1220vnew.pth'
 qnet = VAnet(state_dim, hidden_dim, action_dim)
 qnet.load_state_dict(torch.load(uppermodel_path))
 qnet.eval()

@@ -2,12 +2,25 @@ import torch
 import numpy as np
 import pandas as pd
 
+from get_data_distribution import z_score
 from rl_utils.tools import mapdata_to_modelmatrix, get_neighbor
 from rl_utils.descrete_rl_methods import VAnet, Qnet, Policy
 
+from scipy.stats import norm
+import pickle
+
+
+# glabal variables
 dxdy_dict = {0: (1, 0), 1: (1, 1), 2: (0, 1), 3: (-1, 1), 4: (-1, 0), 5: (-1, -1), 6: (0, -1), 7: (1, -1)}
-mode_v_dict = {'TG': 300, 'GG': 120, 'GSD': 60, 'TS': 150}
+mode_v_dict = {'TG': 172, 'GG': 78, 'GSD': 40, 'TS': 94} # expected speed in km/h
 modelist = ['GSD', 'GG', 'TS', 'TG']
+with open('data/vdistribution.pkl','rb') as f:
+    processed_data = pickle.load(f)
+
+mean_std_dict = {'GG':[], 'GSD':[], 'TS':[], 'TG':[]}
+for mode in processed_data:
+    mean_std_dict[mode] = [np.mean(processed_data[mode]), np.std(processed_data[mode])]
+
 
 
 def _allow(neighbor: int, mode: str) -> bool:
@@ -335,9 +348,9 @@ class UpperEnv:
         matchedmode = None
         min_v_bias = 400
         for mode in action_mode_duels:
-            if min_v_bias > abs(action*20 - mode_v_dict[mode]):
+            if min_v_bias > abs(action*17 - mode_v_dict[mode]):
                 matchedmode = mode
-            min_v_bias = min(abs(action*20 - mode_v_dict[mode]), min_v_bias)
+            min_v_bias = min(abs(action*17 - mode_v_dict[mode]), min_v_bias)
 
         upper_mode = matchedmode
         reward = 0
@@ -373,7 +386,7 @@ class UpperEnv:
 
         t_lower = 0
         v_expected = mode_v_dict[upper_mode]/60
-        v_rural = 0.5 # 30km/h
+        v_rural = 0.3
 
         for i, coord in enumerate(lower_path[1:]):
             x, y = int(coord[0]), int(coord[1])
@@ -398,8 +411,6 @@ class UpperEnv:
 
         # calculate the difference t_lower and t_upper in each step, record the percentage of traj in mode
         #reward -= abs(t_lower - t_upper) *(1 - (self.is_match_compute_tuple[1]/(self.is_match_compute_tuple[0]+0.1)))
-
-
 
         self.t_lower = t_lower
         self.t_upper = t_upper
@@ -438,12 +449,18 @@ class UpperEnv:
 
         # using v_avg as state, v_avg_upper = distance/delta_t
         self.v_avg = 0
-        v_upper = abs(goal_pos[0] - start_pos[0]) + abs(goal_pos[1] - start_pos[1])/(t_upper+1)
+        v_upper = (abs(goal_pos[0] - start_pos[0])**2 + abs(goal_pos[1] - start_pos[1])**2)**0.5 /(t_upper+1)
         self.v_avg += (v_upper - self.v_avg)/(self.step_cnt+1)
 
         # calculate reward using v
-        reward -= (abs(v_upper-v_expected)/v_expected) *(1-(self.is_match_compute_tuple[1]/(self.is_match_compute_tuple[0]+0.1)))
+        # reward -= (abs(v_upper-v_expected)) *(1-(self.is_match_compute_tuple[1]/(self.is_match_compute_tuple[0]+0.1)))
 
+        # calculate reward using cl
+        mean, std = mean_std_dict[upper_mode]
+        z_score = (v_upper - mean)/std
+        cl = 2*(1-norm.cdf(abs(z_score)))
+
+        reward += cl* (self.is_match_compute_tuple[1]/(self.is_match_compute_tuple[0]+0.1))
 
         if self.step_cnt == self.max_step:
             self.traj_idx += self.step_cnt
@@ -454,7 +471,7 @@ class UpperEnv:
         #relative_pos = [goal_pos[0]-start_pos[0], goal_pos[1]-start_pos[1]]
         relative_dis = ((goal_pos[0]-start_pos[0])**2 + (goal_pos[1]-start_pos[1])**2)**0.5
         self.upper_mode = upper_mode
-        return np.array([self.v_avg ,relative_dis] + self.rts_nums), reward, done
+        return np.array([relative_dis] + self.rts_nums), reward, done
 
 
     def reset(self):
@@ -492,5 +509,5 @@ class UpperEnv:
         relative_pos = [goal_pos[0]-start_pos[0], goal_pos[1]-start_pos[1]]
         relative_dis = ((goal_pos[0]-start_pos[0])**2 + (goal_pos[1]-start_pos[1])**2)**0.5
 
-        return np.array( [0,relative_dis] + self.rts_nums)
+        return np.array( [relative_dis] + self.rts_nums)
 
