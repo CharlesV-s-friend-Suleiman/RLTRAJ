@@ -181,11 +181,12 @@ class UpperEnv:
         self.r_avg += (reward-self.r_avg)/(self.step_cnt+1)
         #print('current reward:', reward, 'avg reward:', self.r_avg)
 
+        # todo: meng,zhang: 这里要改成适配新数据集的，把旧版本分开的locx locy改成 locx_o locy_o，locy_d, locy_d
         # embedding the map info to the state
         #print('upper step',self.step_cnt, 'traj+start id-1 ',self.traj_idx,'curidx',self.traj_idx+self.step_cnt-1,
         #      'maxstep',self.max_step, 'coord', self.traj.loc[self.traj_idx+self.step_cnt-1,'locx'], self.traj.loc[self.traj_idx+self.step_cnt-1,'locy'])
-        start_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod - 1, ['locx', 'locy']])
-        goal_pos =tuple( self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod , ['locx', 'locy']])
+        start_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod - 1, ['locx_o', 'locy_o']]) # TODO 这里要改
+        goal_pos =tuple( self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod , ['locx_o', 'locy_o']])
         self.rts_nums = [0,0,0,0]
 
         for mode_idx in range(4):
@@ -214,7 +215,7 @@ class UpperEnv:
 
         cos = 1
         if self.step_cnt>1:
-            pre_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod - 2, ['locx', 'locy']])
+            pre_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod - 2, ['locx_o', 'locy_o']]) # TODO 凡是涉及到locx locy都需要修改
             inner_product = ((goal_pos[0]-start_pos[0])*(goal_pos[0]-pre_pos[0]) + (goal_pos[1]-start_pos[1])*(goal_pos[1]-pre_pos[1]))
             length_product2 = ((goal_pos[0]-start_pos[0])**2 + (goal_pos[1]-start_pos[1])**2)*((goal_pos[0]-pre_pos[0])**2 + (goal_pos[1]-pre_pos[1])**2)
             cos = inner_product/(length_product2**0.5+1)
@@ -324,8 +325,8 @@ class UpperEnv:
         # TODO: check the start_idx WARNING
         if start_idx < 0:
             start_idx += 1
-        start_pos = tuple(self.traj.loc[start_idx, ['locx', 'locy']])
-        goal_pos =tuple( self.traj.loc[(start_idx+1)%self.mod , ['locx', 'locy']])
+        start_pos = tuple(self.traj.loc[start_idx, ['locx_o', 'locy_o']])
+        goal_pos =tuple( self.traj.loc[(start_idx+1)%self.mod , ['locx_o', 'locy_o']])
         self.rts_nums = [0,0,0,0]
 
        # state computing with neighbor rts
@@ -393,8 +394,8 @@ class UpperEnv:
         #print('upper reset', 'maxstep',self.max_step,'trajstart', self.traj_idx)
 
         # embedding the map info to the state
-        start_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod, ['locx', 'locy']])
-        goal_pos =tuple( self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod + 1, ['locx', 'locy']])
+        start_pos = tuple(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod, ['locx_o', 'locy_o']])
+        goal_pos =tuple( self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod + 1, ['locx_o', 'locy_o']])
         t = 60*(self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod + 1, 'time'] - self.traj.loc[(self.traj_idx+self.step_cnt)%self.mod, 'time'])
         self.rts_nums = [0,0,0,0]
 
@@ -415,7 +416,6 @@ class UpperEnv:
 
 class MapEnv:
     """
-    训练两个网络两个智能体，一个从起点出发，一个从终点出发，till met or max step
     """
     def __init__(self, mapdata:dict, traj:pd.DataFrame,
                  test_mode=False, testid_start=0, test_num=8,
@@ -442,7 +442,7 @@ class MapEnv:
         self.distance_hold = 0 if test_mode else 0
         self.traj_cnt = 0 # traj_CNT 是当前训练轨迹的严格索引
 
-    def reset(self): # todo 这里要改
+    def reset(self):
         # reset env by using next two traj record
         # for example, 1st interation, start = traj[0], goal = traj[1]; 2nd interation, start = traj[1], goal = traj[2]...
         self.step_cnt = 0
@@ -486,7 +486,7 @@ class MapEnv:
         if self.neighbor[action]!=0: # when size = 3
         # if self.neighbor[(2+dx)*3 + (2+dy)]!=0: # when size=5
         #     dx,dy = d[0], d[1]
-             reward += 0.2
+             reward += 0.3
 
         # update neighbor
         self.neighbor = np.array(get_neighbor(self.mapdata[self.mode], self.state[0]+self.delta[0], self.state[1]+self.delta[1], size=3))
@@ -530,14 +530,19 @@ class ODMapEnv:
         self.isTest = test_mode
         self.testid_start = testid_start
         self.test_num = test_num
-        self.distance_hold = 0 if test_mode else 0
+        self.distance_hold = 0 if test_mode else 1
         self.traj_cnt = 0 # traj_CNT 是当前训练轨迹的严格索引
 
-    def reset(self): # todo 这里要改
+    def reset(self):
+        """
         # reset env by using next two traj record
         # for example, 1st interation, start = traj[0], goal = traj[1]; 2nd interation, start = traj[1], goal = traj[2]...
-        self.step_cnt = 0
+        # 考虑到两个智能体，所以返回state是一个dict，d[start]和d[end]分别为原先结构
 
+        :return:  包含从起点和终点出发的智能体的state的字典
+        """
+
+        self.step_cnt = 0
         if self.isTest:
             mod = self.test_num
             start_id = self.testid_start
@@ -545,50 +550,93 @@ class ODMapEnv:
             mod = len(self.traj)
             start_id = 0
 
-        locx_start = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locx_o'])
-        locy_start = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locy_o'])
-        locx_end = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locx_d'])
-        locy_end = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locy_d'])
+
+        # t==t 时刻绝对坐标，只能在reset时更新为对应csv里的记录 || 在step时被action更新
+        self.locx_start = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locx_o'])
+        self.locy_start = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locy_o'])
+        self.locx_end = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locx_d'])
+        self.locy_end = float(self.traj.loc[start_id+self.traj_cnt%mod, 'locy_d'])
 
         # when test lower_model, using serval traj records
         self.traj_cnt += 1
 
         self.mode = self.traj.loc[self.traj_cnt%mod, 'mode'] if not self.is_lower else self.dummy_mode
+
         # delta is the relative position of the start_position and 0,0; delta only change when start_position change(when reset)
         # neighbor is the 8 elements list of the grid not including itself, 0-8 are the neighbors from 1,0 to 1,-1
-        self.neighbor = np.array(get_neighbor(self.mapdata[self.mode], locx_start, locy_start, size=3))
-        self.delta = np.array([locx_start, locy_start])
-        self.state = np.array([0,0])
-        self.goal = np.array([locx_end - locx_start, locy_end - locy_start])
+        self.neighbor_start = np.array(get_neighbor(self.mapdata[self.mode], self.locx_start, self.locy_start, size=3))
+        self.neighbor_end = np.array(get_neighbor(self.mapdata[self.mode], self.locx_end, self.locy_end, size=3))
+
+        # 计算t==0时刻相对坐标
+        ego_pos = np.array([0,0])
+        goal_pos_start = np.array([self.locx_end - self.locx_start, self.locy_end - self.locy_start])
+        goal_pos_end = np.array([self.locx_start - self.locx_end, self.locy_start - self.locy_end])
+
         # max step is the mahattan distance between start and goal add 10
-        self.max_step = np.abs(locx_start - locx_end) + np.abs(locy_start - locy_end) + 10
-        return np.hstack((self.state, self.goal, self.neighbor))
+        self.max_step = np.abs(self.locx_start - self.locx_end) + np.abs(self.locy_start - self.locy_end) + 10
 
-    def step(self, action:int): # todo 这里要改
+        self.state_dual = {
+                            'start':np.hstack((ego_pos, goal_pos_start, self.neighbor_start)),
+                            'end': np.hstack((ego_pos, goal_pos_end, self.neighbor_end))
+        }
+
+        return self.state_dual
+
+    def step_2agent(self, action_start:int, action_end:int): #
+        """
+        接受两个智能体动作后更新环境，如果要多agents，传参actionlist就行
+
+        :param action_start: 从起点出发的agent的动作
+        :param action_end: 从终点出发的agent的动作
+        :return: state_dual, reward_dual, done # state reward 是各自的，done是共有的
+        """
         # agent will move to 8 directions,action is tuple of (dx,dy)
-        reward = 0
         self.step_cnt += 1
-        d = dxdy_dict[action]
 
-        # update state of position
-        self.state += np.array(d)
+        r_start, r_end = 0, 0
+        d_start, d_end = dxdy_dict[action_start], dxdy_dict[action_end]
+
+        # 更新 t==t 时刻绝对坐标
+        self.locx_start += d_start[0]
+        self.locy_start += d_start[1]
+        self.locx_end += d_start[0]
+        self.locy_end += d_start[1]
+
+        # 更新state
+        for k in self.state_dual.keys():
+            if k=='start':
+                self.state_dual[k][:2] += np.array([d_start[0], d_start[1]])
+                self.state_dual[k][2:4] += np.array([d_end[0], d_end[1]])
+                self.state_dual[k][4:] =  np.array(get_neighbor(self.mapdata[self.mode],
+                                                            self.locx_start,
+                                                            self.locy_start, size=3))
+            elif k=='end':
+                self.state_dual[k][:2] += np.array([d_end[0], d_end[1]])
+                self.state_dual[k][2:4] += np.array([d_start[0], d_start[1]])
+                self.state_dual[k][4:] = np.array(get_neighbor(self.mapdata[self.mode],
+                                                            self.locx_end,
+                                                            self.locy_end, size=3))
+
 
         # not in the available neighbor
-        if self.neighbor[action]!=0: # when size = 3
-        # if self.neighbor[(2+dx)*3 + (2+dy)]!=0: # when size=5
-        #     dx,dy = d[0], d[1]
-             reward += 0.2
+        if self.neighbor_start[action_start]!=0: # when size = 3
+            r_start += 0.0
+        if self.neighbor_end[action_end]!=0:
+            r_end += 0.0
 
         # update neighbor
-        self.neighbor = np.array(get_neighbor(self.mapdata[self.mode], self.state[0]+self.delta[0], self.state[1]+self.delta[1], size=3))
+        self.neighbor_start = self.state_dual['start'][4:]
+        self.neighbor_end = self.state_dual['end'][4:]
 
         # to encourage the agent travel in the shortest path
-        reward -= 1 if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) > self.distance_hold else 0
+        if np.abs(self.locx_start - self.locx_end) + np.abs(self.locy_start - self.locy_end) > self.distance_hold:
+            r_start -= 1
+            r_end -= 1
 
-        if np.abs(self.state[0] - self.goal[0]) + np.abs(self.state[1] - self.goal[1]) == self.distance_hold or self.step_cnt == self.max_step:
+        if np.abs(self.locx_start - self.locx_end) + np.abs(self.locy_start - self.locy_end) <= self.distance_hold or self.step_cnt == self.max_step:
             done = True
         else:
             done = False
 
         # to avoid the repeated state and encourage the agent explore by real-map
-        return np.hstack((self.state, self.goal, self.neighbor)), reward, done
+        return self.state_dual , r_start, r_end, done

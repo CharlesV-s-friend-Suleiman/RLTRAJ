@@ -10,24 +10,24 @@ map_col = 564
 map_row = 529
 state_dim = 9
 action_dim = 20
-hidden_dim = 128
+hidden_dim = 64
 
 # num_tests is the end idx in train10000.csv
 num_test = 1000
 num_trajs =100
 action_dict = {0: 'GSD', 1: 'GG', 2: 'TS', 3: 'TG'}
 
-uppermodel_path = 'upper_model/DQN_20000_eps_inrealmap_321.pth'
+uppermodel_path = 'upper_model/DQN_1500_eps_inrealmap_625.pth'
 qnet = VAnet(state_dim, hidden_dim, action_dim)
 qnet.load_state_dict(torch.load(uppermodel_path))
 qnet.eval()
 
 lower_config = {
-    'model_type': 'DQN',
+    'model_type': 'SAC',
     'state_dim': 12,
-    'hidden_dim': 128,
+    'hidden_dim': 64,
     'action_dim': 8,
-    'model_path': 'lower_model/DQN_15000_eps_inrealmap_117_128x128_sota.pth',
+    'model_path': 'lower_model/SAC_12000_eps_inrealmap_624.pth',
 }
 # lower_config = {
 #     'model_type': 'SAC',
@@ -40,7 +40,7 @@ lower_config = {
 
 with open('data/GridModesAdjacentRealworld.pkl', 'rb') as f:
     mapdata = pickle.load(f)
-traj = pd.read_csv('data/trainbalanced8000.csv')
+traj = pd.read_csv('data/data_train_upper_250624.csv')
 
 upper_env = UpperEnv(mapdata, traj, test_mode=True, testid_start=-1, test_num=num_test,
                      use_real_map=True, realmap_row=map_row, realmap_col=map_col, lower_model_config=lower_config)
@@ -75,7 +75,7 @@ for i in range(num_trajs):
         # result evaluation
         current_idx = (upper_env.traj_idx + upper_env.step_cnt)
         current_record_idx = traj.loc[current_idx, 'ID']
-        x, y = traj.loc[current_idx, 'locx'], traj.loc[current_idx, 'locy']
+        x, y = traj.loc[current_idx, 'locx_o'], traj.loc[current_idx, 'locy_o'] # todo : check
         print(action)
         s, reward, done = upper_env.step_with20action(action)
         totalamount_dict[traj.loc[current_idx, 'mode']] += 1

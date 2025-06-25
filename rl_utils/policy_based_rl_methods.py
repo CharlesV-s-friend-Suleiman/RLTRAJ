@@ -310,3 +310,7 @@ class SACWithConv(SAC):
         action = action_dist.sample()
 
         return action.item()
+
+
+class SAC_2agent(SAC):
+    pass

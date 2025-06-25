@@ -25,21 +25,21 @@ from rl_utils.value_based_rl_methods import DQN
 map_row = 529
 map_col = 564
 buffer_size = 20000
-minimal_size = 2048
+minimal_size = 512
 buffer = Buffer(buffer_size)
 with open ('data/GridModesAdjacentRealworld.pkl','rb') as f:
     mapdata = pickle.load(f)
-trajdata = pd.read_csv('data/realworldTraj.csv')
+trajdata = pd.read_csv('data/data_train_upper_250624.csv')
 
 # load hyperparameters for upper model
 state_dim = 9
 action_dim = 20
-hidden_dim = 128
+hidden_dim = 64
 lr = 0.003
 gamma = 0.99
-batch_size = 512
+batch_size = 256
 target_update = 50
-num_episodes = 20000
+num_episodes = 3000
 epsilon = 0.1
 num_train = 20
 
@@ -54,9 +54,9 @@ num_train = 20
 lower_model_config = {
     'model_type': 'SAC',
     'state_dim': 12,
-    'hidden_dim': 128,
+    'hidden_dim': 64,
     'action_dim': 8,
-    'model_path': './lower_model/SAC_20000_eps_inrealmap_320.pth',
+    'model_path': './lower_model/SAC_12000_eps_inrealmap_624.pth',
 }
 env = UpperEnv(mapdata,trajdata,trainid_start=0, train_num=7560,m=4,
                use_real_map=True,realmap_col=map_col,realmap_row=map_row,

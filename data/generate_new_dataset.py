@@ -29,18 +29,18 @@ for _, group in data_raw.groupby('ID'):
         })
 
 data_lower = pd.DataFrame(data_lower)
+data_lower.to_csv('data_train_upper_250624.csv')
+# # Sort by distance in ascending order
+# data_lower = data_lower.sort_values(by='distance', ascending=False)
+# data_lower = data_lower[data_lower['distance'] > 0]  # Remove rows with zero distance
 
-# Sort by distance in ascending order
-data_lower = data_lower.sort_values(by='distance', ascending=False)
-data_lower = data_lower[data_lower['distance'] > 0]  # Remove rows with zero distance
-
-# Save the new dataset
-data_lower.to_csv('data_lower_train_sort_ascend_0.csv', index=True)
-
-# random shuffle the data_lower
-data_lower2 = data_lower.sample(frac=1).reset_index(drop=True)
-data_lower2.to_csv('data_lower_train_random.csv', index=False)
-
-# merge
-data_lower3 = pd.concat([data_lower, data_lower2], ignore_index=True)
-data_lower3.to_csv('data_lower_train_mixed_0.csv', index=False)
+# # Save the new dataset
+# data_lower.to_csv('data_lower_train_sort_ascend_0.csv', index=True)
+#
+# # random shuffle the data_lower
+# data_lower2 = data_lower.sample(frac=1).reset_index(drop=True)
+# data_lower2.to_csv('data_lower_train_random.csv', index=False)
+#
+# # merge
+# data_lower3 = pd.concat([data_lower, data_lower2], ignore_index=True)
+# data_lower3.to_csv('data_lower_train_mixed_0.csv', index=False)

@@ -25,9 +25,10 @@ from rl_utils.buffer import Buffer, TrainTraj, TrainTrajwithMapinfo
 from rl_utils.env import MapEnv, ODMapEnv
 from rl_utils.value_based_rl_methods import DQN
 from rl_utils.policy_based_rl_methods import SAC, SACWithConv
+from matplotlib.gridspec import GridSpec
 
 # load the mapdata and traj, set the buffer
-buffer_size = 9128
+buffer_size = 2**14
 map_row = 529
 map_col = 564
 with open ('data/GridModesAdjacentRealworld.pkl','rb') as f:
@@ -39,7 +40,7 @@ return_list = []
 
 # set the hyperparameters for all methods
 gamma = .98
-minimal_size = 2048
+minimal_size = 4096
 batch_size = 512
 device = torch.device("cuda")
 # todo : finish env
@@ -52,7 +53,7 @@ env = ODMapEnv(mapdata = mapdata,
                realmap_col=map_col)
 # set the device & hyperparameters for DQN
 lr = 0.001
-num_episodes = 24000
+num_episodes = 20000
 num_train = 20
 epsilon = .05
 target_update = 50
@@ -69,135 +70,137 @@ torch.manual_seed(42)
 
 
 # start training
-def train(agent, env, episodes, agent_type, use_her, with_conv, **kwargs):
+def train_2agent(agent1, agent2, env, episodes, agent_type, use_her, **kwargs):
     ep = 0
-    return_list = []
-    losses = []
-    critic_losses = []
-    actor_losses = []
+    return_list = [[],[]]
+    critic_losses = [[],[]]
+    actor_losses = [[],[]]
 
     for i in range(10):
         with tqdm(total=int(episodes / 10), desc='Iteration {}'.format(i)) as pbar:
             for e in range(int(episodes / 10)):
                 ep += 1
-                state = env.reset()
-                agent.visited_states.clear()  # Clear the visited states set
-                traj = TrainTrajwithMapinfo(state, state[:2] + env.delta) if with_conv else TrainTraj(state)
-                episode_return = 0
+                state_dual = env.reset()
+                traj_start = TrainTraj(state_dual['start'])
+                traj_end = TrainTraj(state_dual['end'])
+
+                episode_return_1 = 0
+                episode_return_2 = 0
+
                 done = False
 
                 # sample trajectory
                 while not done:
+                    state_start = state_dual['start']
+                    state_end = state_dual['end']
+
                     env_max_step = env.max_step
-                    if with_conv:
-                        agent.set_mode(env.mode)
-                        action = agent.take_action_with_conv(state, state[:2]+env.delta)
-                    else:
-                        action = agent.take_action(state)  # epsilon-greedy with decay
-                    state, reward, done = env.step(action)
-                    episode_return += reward
-                    if with_conv:
-                        cur_pos = state[:2] + env.delta # [x y]
-                        traj.store_step_withmapinfo(state, action, reward, env_max_step, cur_pos, done)
-                    else:
-                        traj.store_step(state, action, reward, env_max_step, done)
-                buffer.add_traj(traj)
-                return_list.append(episode_return)
+                    # agent1 agent2分别更新各自的策略网络&价值网络，其实价值网络应该合用，但是先开发再优化吧
+                    action1 = agent1.take_action(state_start)  # epsilon-greedy with decay
+                    action2 = agent2.take_action(state_end)
+
+                    state_dual, r_start, r_end, done = env.step_2agent(action1, action2)
+                    episode_return_1 += r_start
+                    episode_return_2 += r_end
+                    # 同质性轨迹一次采样两条
+                    traj_start.store_step(state_dual['start'], action1, r_start, env_max_step, done)
+                    traj_end.store_step(state_dual['end'], action2, r_end, env_max_step, done)
+
+                buffer.add_traj(traj_start)
+                buffer.add_traj(traj_end)
+                return_list[0].append(episode_return_1)
+                return_list[1].append(episode_return_2)
+
 
                 # use HER to sample a batch of samples
                 if buffer.size() >= minimal_size:
-                    episode_losses = []
-                    episode_critic_losses = []
-                    episode_actor_losses = []
+                    episode_critic_losses = [[],[]]
+                    episode_actor_losses = [[],[]]
                     for _ in range(num_train):
-                        loss = 0
-                        critic_loss = 0
-                        actor_loss = 0
-                        if with_conv:
-                            transition_dict = buffer.sample_with_mapinfo(batch_size, use_her=use_her)
-                        else:
+                        for j, agent in enumerate([agent1, agent2]):
                             transition_dict = buffer.sample(batch_size, use_her=use_her)
-                        if agent_type == 'SAC':
                             critic_loss, actor_loss = agent.update(transition_dict)
-                            episode_critic_losses.append(critic_loss)
-                            episode_actor_losses.append(actor_loss)
-                        elif agent_type == 'DQN':
-                            loss += agent.update(transition_dict)
-                            episode_losses.append(loss / num_train)
-
-                    if agent_type == 'SAC':
-                        critic_losses.append(np.mean(episode_critic_losses))
-                        actor_losses.append(np.mean(episode_actor_losses))
-                    elif agent_type == 'DQN':
-                        losses.append(np.mean(episode_losses))
+                            episode_critic_losses[j].append(critic_loss)
+                            episode_actor_losses[j].append(actor_loss)
+                    for j in range(2):
+                        critic_losses[j].append(np.mean(episode_critic_losses[j]))
+                        actor_losses[j].append(np.mean(episode_actor_losses[j]))
 
                 if (e + 1) % 10 == 0:
                     pbar.set_postfix({
                         'episode': '%d' % (episodes / 10 * i + e + 1),
-                        'return': '%.3f' % np.mean(return_list[-10:])
+                        'return': '%.3f' % np.mean(return_list[0][-10:])
                     })
                 pbar.update(1)
 
     # plot the return and losses
-    averge_return_per10 = []
+    averge_return_per10 = [[],[]]
     for i in range(0, len(return_list), 10):
-        averge_return_per10.append(np.mean(return_list[i:i + 10]))
+        averge_return_per10[0].append(np.mean([0][i:i + 10]))
+        averge_return_per10[1].append(np.mean([1][i:i + 10]))
 
-    fig, ax1 = plt.subplots()
+    fig = plt.figure(figsize=(12, 6))
+    gs = GridSpec(1, 2, width_ratios=[1, 1])  # Create a grid with two equal subplots
 
+    # Left subplot
+    ax1 = fig.add_subplot(gs[0])
     color = 'tab:blue'
     ax1.set_xlabel('Episodes')
-    ax1.set_ylabel('Returns per 10 episodes', color=color)
-    ax1.plot([i * 10 for i in range(len(averge_return_per10))], averge_return_per10, color=color)
+    ax1.set_ylabel('Returns(pre10) for agent1', color=color)
+    ax1.plot([i * 10 for i in range(len(averge_return_per10[0]))], averge_return_per10[0], color=color)
     ax1.tick_params(axis='y', labelcolor=color)
 
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-
+    ax2 = ax1.twinx()  # Instantiate a second axes that shares the same x-axis
     color = 'tab:red'
-    ax2.set_ylabel('Loss', color=color)  # we already handled the x-label with ax1
-
-    if agent_type == 'SAC':
-        ax2.plot(range(minimal_size, minimal_size + len(critic_losses)), critic_losses, color=color, label='Critic Loss')
-        ax2.plot(range(minimal_size, minimal_size + len(actor_losses)), actor_losses, color='tab:green', label='Actor Loss')
-    elif agent_type == 'DQN':
-        ax2.plot(range(minimal_size, minimal_size + len(losses)), losses, color=color, label='Average Q-Loss per 10 episodes')
-
+    ax2.set_ylabel('Loss for agent1', color=color)
+    ax2.plot(range(minimal_size, minimal_size + len(critic_losses[0])), critic_losses[0], color=color, label='Critic Loss')
+    ax2.plot(range(minimal_size, minimal_size + len(actor_losses[0])), actor_losses[0], color='tab:green', label='Actor Loss')
     ax2.tick_params(axis='y', labelcolor=color)
 
-    fig.tight_layout()  # otherwise the right y-label is slightly clipped
-    plt.title('{} with HER on {}'.format(agent_type, 'RealMap'))
+    # Right subplot
+    ax3 = fig.add_subplot(gs[1])
+    color = 'tab:blue'
+    ax3.set_xlabel('Episodes')
+    ax3.set_ylabel('Returns(pre10) for agent2 ', color=color)
+    ax3.plot([i * 10 for i in range(len(averge_return_per10[1]))], averge_return_per10[1], color=color)
+    ax3.tick_params(axis='y', labelcolor=color)
+
+    ax4 = ax3.twinx()  # Instantiate a second axes that shares the same x-axis
+    color = 'tab:red'
+    ax4.set_ylabel('Loss', color=color)
+    ax4.plot(range(minimal_size, minimal_size + len(critic_losses[1])), critic_losses[1], color=color, label='Critic Loss')
+    ax4.plot(range(minimal_size, minimal_size + len(actor_losses[1])), actor_losses[1], color='tab:green', label='Actor Loss')
+    ax4.tick_params(axis='y', labelcolor=color)
+
+    fig.tight_layout()  # Adjust layout to prevent overlap
+    plt.suptitle('{} with HER on {}'.format(agent_type, 'RealMap'))  # Add a common title
     plt.show()
 
-    if agent_type == 'DQN':
-        torch.save(agent.target_qnet.state_dict(),
+    torch.save(agent1.actor.state_dict(),
                    'lower_model/{}_{}_eps_in{}_{}.pth'.format(agent_type, episodes, 'realmap',
                                                         str(datetime.datetime.now().month) + str(
                                                             datetime.datetime.now().day)))
-    if agent_type == 'SAC':
-        torch.save(agent.actor.state_dict(),
+    torch.save(agent2.actor.state_dict(),
                    'lower_model/{}_{}_eps_in{}_{}.pth'.format(agent_type, episodes, 'realmap',
                                                         str(datetime.datetime.now().month) + str(
                                                             datetime.datetime.now().day)))
     print('Model saved successfully!')
 
     return None
-#
-# DQN_agent = DQN(12, hidden_dim, 8, lr, gamma, epsilon, target_update, device,
-#                 "dueling",using_realmap=True)
 
 # normal sac
-SAC_agent = SAC(12, 64, 8,
+SAC_agent1 = SAC(12, 64, 8,
+                actor_lr = alpha_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
+                target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
+                using_realmap=True,mapdata =env.mapdata)
+SAC_agent2 = SAC(12, 64, 8,
                 actor_lr = alpha_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
                 target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
                 using_realmap=True,mapdata =env.mapdata)
 
-# SAC_agent = SACWithConv(12, hidden_dim, 8,
-#                 actor_lr = alpha_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
-#                 target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
-#                 using_realmap=True,mapdata =env.mapdata)
 
-#train(DQN_agent, env, num_episodes, 'DQN', use_her=True)
-train(SAC_agent, env, num_episodes, 'SAC', use_her=True, with_conv = False)
+
+train_2agent(SAC_agent1, SAC_agent1, env, num_episodes, 'SAC', use_her=True)
 
 ### main function ###
 # Function to save training configuration

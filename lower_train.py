@@ -37,7 +37,7 @@ map_row = 529
 map_col = 564
 with open ('data/GridModesAdjacentRealworld.pkl','rb') as f:
     mapdata = pickle.load(f)
-shuffle_traj = pd.read_csv('data/realworldTraj15000.csv')
+shuffle_traj = pd.read_csv('data/data_lower_train_random.csv')
 
 buffer = Buffer(buffer_size)
 return_list = []
@@ -47,12 +47,12 @@ gamma = .98
 minimal_size = 1024
 batch_size = 256
 device = torch.device("cuda")
-hidden_dim = 128
-env = MapEnv(mapdata, shuffle_traj, train_num=15000,trainid_start=0, use_real_map=True, realmap_row=map_row, realmap_col=map_col)
+hidden_dim = 64
+env = MapEnv(mapdata, shuffle_traj, use_real_map=True, realmap_row=map_row, realmap_col=map_col)
 
 # set the device & hyperparameters for DQN
 lr = 0.001
-num_episodes = 200
+num_episodes = 12000
 num_train = 20
 epsilon = .05
 target_update = 50
@@ -185,18 +185,18 @@ def train(agent, env, episodes, agent_type, use_her, with_conv, **kwargs):
 #                 "dueling",using_realmap=True)
 
 # normal sac
-# SAC_agent = SAC(12, hidden_dim, 8,
-#                 actor_lr = alpha_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
-#                 target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
-#                 using_realmap=True,mapdata =env.mapdata)
-
-SAC_agent = SACWithConv(12, hidden_dim, 8,
-                actor_lr = alpha_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
+SAC_agent = SAC(12, hidden_dim, 8,
+                actor_lr = actor_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
                 target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
                 using_realmap=True,mapdata =env.mapdata)
 
+# SAC_agent = SACWithConv(12, hidden_dim, 8,
+#                 actor_lr = actor_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
+#                 target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
+#                 using_realmap=True,mapdata =env.mapdata)
+
 #train(DQN_agent, env, num_episodes, 'DQN', use_her=True)
-train(SAC_agent, env, num_episodes, 'SAC', use_her=True, with_conv = True)
+train(SAC_agent, env, num_episodes, 'SAC', use_her=True, with_conv = False)
 
 ### main function ###
 # Function to save training configuration

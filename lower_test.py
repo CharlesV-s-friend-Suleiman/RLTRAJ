@@ -35,11 +35,11 @@ mode_v_dict = {'TG': 300, 'GG': 120, 'GSD': 60, 'TS': 150}
 modelist = ['GSD', 'GG', 'TS', 'TG']
 
 # test TG:4713,3;GG: 0, 8 or 9 5; GSD:2084,12 ; TS: 4139,.]5
-testid_start= 4713
+testid_start= 0
 num_tests = 3
 with open('data/GridModesAdjacentRealworld.pkl','rb') as f:
     mapdata = pickle.load(f)
-traj = pd.read_csv('data/datainrealworld.csv')
+traj = pd.read_csv('data/data_lower_test.csv')
 trajmode = traj.loc[testid_start, 'mode']
 
 env = MapEnv(mapdata, traj, test_mode=True, testid_start=testid_start, test_num=num_tests,
@@ -71,19 +71,19 @@ for i in range(num_tests):
     state_set.add(tuple(state[:2]))
     while not done:
         step_cnt += 1
-        if test_type == 'DQN':
-            q_values = qnet(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
-            sorted_actions = torch.sort(q_values, descending=True).indices.squeeze().tolist()
-            action = sorted_actions[0]
-            if tuple(state[:2] + dxdy_dict[action]) in state_set:
-                done = True
-            else:
-                state_set.add(tuple(state[:2] + dxdy_dict[action]))
-            for j in range(len(sorted_actions)):
-                tmp_action = sorted_actions[j]
-                if tuple(state[:2] + dxdy_dict[tmp_action]) not in state_set:
-                    action = tmp_action
-                    break
+        # if test_type == 'DQN': # TODO: DQN的方法需要补起来，孟，张 补一下
+        #     q_values = qnet(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
+        #     sorted_actions = torch.sort(q_values, descending=True).indices.squeeze().tolist()
+        #     action = sorted_actions[0]
+        #     if tuple(state[:2] + dxdy_dict[action]) in state_set:
+        #         done = True
+        #     else:
+        #         state_set.add(tuple(state[:2] + dxdy_dict[action]))
+        #     for j in range(len(sorted_actions)):
+        #         tmp_action = sorted_actions[j]
+        #         if tuple(state[:2] + dxdy_dict[tmp_action]) not in state_set:
+        #             action = tmp_action
+        #             break
 
         if test_type == 'SAC': #Z or other policy-based methods
             if test_with_conv:
@@ -109,15 +109,16 @@ for i in range(num_tests):
     results.append((distance_to_start, end_to_start, total_reward, path, step_cnt, actions))
     # Plot the path and the start and end points
     path = np.array(path)
+    print(path)
 
     if traj.loc[i+testid_start, 'ID'] == traj.loc[i+testid_start + 1, 'ID']:
-        plt.plot(path[:, 0] + traj.loc[i+testid_start, 'locx'], path[:, 1] + traj.loc[i+testid_start, 'locy'], marker = 'o',label=f'Test {i+1} Path',markersize = 1, linewidth = 2)
-        plt.scatter(distance_to_start[0] + traj.loc[i+testid_start, 'locx'], distance_to_start[1] + traj.loc[i+testid_start, 'locy'], marker='o', color='green',label=f'Test {i+1} Start')
-        plt.scatter(end_to_start[0] + traj.loc[i+testid_start, 'locx'], end_to_start[1] + traj.loc[i+testid_start, 'locy'], marker='x', color='red', label=f'Test {i+1} End')
-        x_min = min(x_min, distance_to_start[0] + traj.loc[i+testid_start, 'locx'])-2
-        y_min = min(y_min, distance_to_start[1] + traj.loc[i+testid_start, 'locy'])-2
-        x_max = max(x_max, distance_to_start[0] + traj.loc[i+testid_start, 'locx'])+2
-        y_max = max(y_max, distance_to_start[1] + traj.loc[i+testid_start, 'locy'])+2
+        plt.plot(path[:, 0] + traj.loc[i+testid_start, 'locx_o'], path[:, 1] + traj.loc[i+testid_start, 'locy_o'], marker = 'o',label=f'Test {i+1} Path',markersize = 1, linewidth = 2)
+        plt.scatter(distance_to_start[0] + traj.loc[i+testid_start, 'locx_o'], distance_to_start[1] + traj.loc[i+testid_start, 'locy_o'], marker='o', color='green',label=f'Test {i+1} Start')
+        plt.scatter(end_to_start[0] + traj.loc[i+testid_start, 'locx_o'], end_to_start[1] + traj.loc[i+testid_start, 'locy_o'], marker='x', color='red', label=f'Test {i+1} End')
+        x_min = min(x_min, distance_to_start[0] + traj.loc[i+testid_start, 'locx_o'])-2
+        y_min = min(y_min, distance_to_start[1] + traj.loc[i+testid_start, 'locy_o'])-2
+        x_max = max(x_max, distance_to_start[0] + traj.loc[i+testid_start, 'locx_o'])+2
+        y_max = max(y_max, distance_to_start[1] + traj.loc[i+testid_start, 'locy_o'])+2
 
         t_upper = traj.loc[i+testid_start+1, 'time']-traj.loc[i+testid_start, 'time']
         # compute t_lower and t_upper
