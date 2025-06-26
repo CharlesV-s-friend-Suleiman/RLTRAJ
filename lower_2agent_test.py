@@ -1,3 +1,5 @@
+# 改  所有state全部变成state['start']
+
 import torch
 import numpy as np
 import pickle
@@ -22,7 +24,7 @@ qnet = VAnet(state_dim, hidden_dim, action_dim)
 test_with_conv = False
 # sac without conv
 actor_net = Policy(state_dim, hidden_dim, action_dim)
-actor_net.load_state_dict(torch.load('lower_model/SAC_24000_eps_inrealmap_69.pth'))
+actor_net.load_state_dict(torch.load('lower_model/SAC_20000_eps_inrealmap_626.pth'))
 
 # sac with conv
 # actor_net = PolicyWithConv(state_dim, hidden_dim, action_dim,5*5)g
@@ -34,8 +36,8 @@ actor_net.eval()
 mode_v_dict = {'TG': 300, 'GG': 120, 'GSD': 60, 'TS': 150}
 modelist = ['GSD', 'GG', 'TS', 'TG']
 
-testid_start= 6574 #0， 4942， 6574
-num_tests = 3
+testid_start= 4942 #0， 4942， 6574
+num_tests = 30
 with open('data/GridModesAdjacentRealworld.pkl','rb') as f:
     mapdata = pickle.load(f)
 traj = pd.read_csv('data/data_lower_test.csv')
@@ -59,15 +61,15 @@ for i in range(num_tests):
     state = env.reset()
     done = False
     total_reward = 0
-    distance_to_start = state[:2] # always (0, 0)
-    end_to_start = state[2:]
+    distance_to_start = state['start'][:2] # always (0, 0)
+    end_to_start = state['start'][2:]
     path = []
     actual_pos = []
 
     step_cnt = 0
     actions = []
     state_set = set()
-    state_set.add(tuple(state[:2]))
+    state_set.add(tuple(state['start'][:2]))
     while not done:
         step_cnt += 1
         if test_type == 'DQN':
@@ -93,16 +95,16 @@ for i in range(num_tests):
                 # state tensor (1, state_dim) ; sensation_mtx tensor (1, grid, grid)
                 action = int(actor_net(state_tensor, sensation_mtx).argmax())
             else:
-                action = int(actor_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax())
+                action = int(actor_net(torch.tensor(state['start'], dtype=torch.float32).unsqueeze(0)).argmax())
 
 
-        next_state, reward, done = env.step(action)
+        next_state, reward, re, done = env.step_2agent(action,0)
         actions.append(action)
         state = next_state
-        state_set.add(tuple(state[:2]))
+        state_set.add(tuple(state['start'][:2]))
         total_reward += reward
-        path.append(state[:2])
-        actual_pos.append(state[:2]+ env.delta)
+        path.append(state['start'][:2])
+        actual_pos.append(state['start'][:2]) # 改   + env.delta
     all_trajs.append(actual_pos)
 
     results.append((distance_to_start, end_to_start, total_reward, path, step_cnt, actions))
@@ -163,7 +165,8 @@ plt.xlabel('X')
 plt.ylabel('Y')
 plt.grid(True)
 plt.title('Agent Paths in Environment')
-plt.show(figsize=(40, 32))
+plt.figure(figsize=(40, 32))
+plt.show()
 
 # Print total rewards for each test
 for i, (distance_to_start, end_to_start, total_reward, path, cnt, action) in enumerate(results):
