@@ -24,22 +24,22 @@ from rl_utils.value_based_rl_methods import DQN
 # load map data and traj data, [r,c] = [326,364] [529.564], [944,825]
 map_row = 529
 map_col = 564
-buffer_size = 20000
-minimal_size = 512
+buffer_size = 4096
+minimal_size = 0
 buffer = Buffer(buffer_size)
-with open ('data/GridModesAdjacentRealworld.pkl','rb') as f:
+with open('data/GridModesAdjacentRealworld.pkl', 'rb') as f:
     mapdata = pickle.load(f)
 trajdata = pd.read_csv('data/data_train_upper_250624.csv')
 
 # load hyperparameters for upper model
-state_dim = 9
-action_dim = 20
+state_dim = 5
+action_dim = 4
 hidden_dim = 64
 lr = 0.003
 gamma = 0.99
 batch_size = 256
 target_update = 50
-num_episodes = 3000
+num_episodes = 30000
 epsilon = 0.1
 num_train = 20
 
@@ -56,20 +56,32 @@ lower_model_config = {
     'state_dim': 12,
     'hidden_dim': 64,
     'action_dim': 8,
-    'model_path': './lower_model/SAC_12000_eps_inrealmap_624.pth',
+    'model_path': './lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth',
 }
-env = UpperEnv(mapdata,trajdata,trainid_start=0, train_num=7560,m=4,
-               use_real_map=True,realmap_col=map_col,realmap_row=map_row,
+env = UpperEnv(mapdata, trajdata, trainid_start=0, train_num=12038, m=4,
+               use_real_map=True, realmap_col=map_col, realmap_row=map_row,
                lower_model_config=lower_model_config)
-upper_agent  = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon,target_update,device='cuda',
-                   dqn_type="dueling", using_realmap=True)
+upper_agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, target_update, device='cuda',
+                  dqn_type="dueling", using_realmap=True)
 
-def train_uppermodel(agent, env, episodes,agent_type, use_her=False):
+
+import csv
+
+def train_uppermodel(agent, env, episodes, agent_type, use_her=False):
     return_list = []
     losses = []
+
+    # 创建 CSV 文件并写入表头
+    csv_file = 'upper_model/{}_{}_eps_in{}_{}.csv'.format(agent_type, episodes, 'realmap',
+                                                          str(datetime.datetime.now().month) + str(
+                                                              datetime.datetime.now().day))
+    with open(csv_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Episode', 'Episode Return', 'Loss'])
+
     for i in range(10):
-        with tqdm(total = int(episodes/10), desc='Iteration %d' % i) as pbar:
-            for e in range(int(episodes/10)):
+        with tqdm(total=int(episodes / 10), desc='Iteration %d' % i) as pbar:
+            for e in range(int(episodes / 10)):
                 s = env.reset()
                 traj = TrainTraj(s)
                 done = False
@@ -78,29 +90,36 @@ def train_uppermodel(agent, env, episodes,agent_type, use_her=False):
                 # sample
                 while not done:
                     a = agent.take_action(s)
-                    s, r, done = env.step_with20action(a)
+                    s, r, done = env.step(a)
                     episode_return += r
-                    traj.store_step(s,a,r,None,done) # max_step is not used in upper model
+                    traj.store_step(s, a, r, None, done)  # max_step is not used in upper model
                 buffer.add_traj(traj)
                 return_list.append(episode_return)
 
                 # batch update with adam
+                episode_loss = []
                 if buffer.size() > minimal_size:
-                    episode_loss = []
                     for _ in range(num_train):
                         loss = 0
                         trainsition_dict = buffer.sample(batch_size, use_her)
                         loss += agent.update(trainsition_dict)
-                        episode_loss.append(loss/num_train)
+                        episode_loss.append(loss / num_train)
                     losses.append(np.mean(episode_loss))
 
+                # 将 episode_return 和 loss 写入 CSV 文件
+                with open(csv_file, mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow([episodes / 10 * i + e + 1, episode_return, np.mean(episode_loss)])
+
                 # update gui
-                if (e + 1)% 10 == 0:
+                if (e + 1) % 10 == 0:
                     pbar.set_postfix({
                         'episode': '%d' % (episodes / 10 * i + e + 1),
                         'return': '%.3f' % np.mean(return_list[-10:])
                     })
                 pbar.update(1)
+
+    print(f'Data saved to {csv_file}')
 
     # plot the return and loss
     averge_return_per10 = []
@@ -120,23 +139,25 @@ def train_uppermodel(agent, env, episodes,agent_type, use_her=False):
     color = 'tab:red'
     ax2.set_ylabel('Loss', color=color)  # we already handled the x-label with ax1
 
-    ax2.plot(range(minimal_size, minimal_size + len(losses)), losses, color=color, label='Average Q-Loss per 10 episodes')
+    ax2.plot(range(minimal_size, minimal_size + len(losses)), losses, color=color,
+             label='Average Q-Loss per 10 episodes')
     ax2.tick_params(axis='y', labelcolor=color)
     fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.title('{} Travel Mode Choice on {}'.format(agent_type, 'RealMap'))
     plt.size = (30, 20)
     plt.savefig('upper_model/{}_{}_eps_in{}_{}.png'.format(agent_type, episodes, 'realmap',
-                                                    str(datetime.datetime.now().month) + str( datetime.datetime.now().day)))
+                                                           str(datetime.datetime.now().month) + str(
+                                                               datetime.datetime.now().day)))
     plt.show()
 
     torch.save(agent.target_qnet.state_dict(),
-                'upper_model/{}_{}_eps_in{}_{}.pth'.format(agent_type, episodes, 'realmap',
-                                                    str(datetime.datetime.now().month) + str( datetime.datetime.now().day)))
+               'upper_model/{}_{}_eps_in{}_{}.pth'.format(agent_type, episodes, 'realmap',
+                                                          str(datetime.datetime.now().month) + str(
+                                                              datetime.datetime.now().day)))
     print('Model saved successfully!')
 
     return None
 
-#train_uppermodel(upper_agent, env, num_episodes, 'DQN', use_her=False)
-train_uppermodel(agent = upper_agent, env = env, episodes=num_episodes,
-      agent_type = 'DQN', use_her=False)
 
+# train_uppermodel(upper_agent, env, num_episodes, 'DQN', use_her=False)
+train_uppermodel(agent=upper_agent, env=env, episodes=num_episodes, agent_type='DQN', use_her=False)

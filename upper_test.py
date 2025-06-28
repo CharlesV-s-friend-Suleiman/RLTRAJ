@@ -8,8 +8,8 @@ from rl_utils.value_based_rl_methods import VAnet
 
 map_col = 564
 map_row = 529
-state_dim = 9
-action_dim = 20
+state_dim = 5
+action_dim = 4
 hidden_dim = 64
 
 # num_tests is the end idx in train10000.csv
@@ -17,7 +17,7 @@ num_test = 1000
 num_trajs =100
 action_dict = {0: 'GSD', 1: 'GG', 2: 'TS', 3: 'TG'}
 
-uppermodel_path = 'upper_model/DQN_1500_eps_inrealmap_625.pth'
+uppermodel_path = 'upper_model/DQN_30000_eps_inrealmap_628.pth'
 qnet = VAnet(state_dim, hidden_dim, action_dim)
 qnet.load_state_dict(torch.load(uppermodel_path))
 qnet.eval()
@@ -27,7 +27,7 @@ lower_config = {
     'state_dim': 12,
     'hidden_dim': 64,
     'action_dim': 8,
-    'model_path': 'lower_model/SAC_12000_eps_inrealmap_624.pth',
+    'model_path': 'lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth',
 }
 # lower_config = {
 #     'model_type': 'SAC',
@@ -77,7 +77,7 @@ for i in range(num_trajs):
         current_record_idx = traj.loc[current_idx, 'ID']
         x, y = traj.loc[current_idx, 'locx_o'], traj.loc[current_idx, 'locy_o'] # todo : check
         print(action)
-        s, reward, done = upper_env.step_with20action(action)
+        s, reward, done = upper_env.step(action)
         totalamount_dict[traj.loc[current_idx, 'mode']] += 1
         accuracy_dict[traj.loc[current_idx, 'mode']] += int(upper_env.upper_mode == traj.loc[current_idx, 'mode'])
         test_results.append(int(upper_env.upper_mode == traj.loc[current_idx, 'mode']))

@@ -14,7 +14,7 @@ hidden_dim = 64
 action_dim = 8
 
 actor_net = Policy(state_dim, hidden_dim, action_dim)
-actor_net.load_state_dict(torch.load('lower_model/SAC_12000_eps_inrealmap_624.pth'))
+actor_net.load_state_dict(torch.load('lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth'))
 actor_net.eval()
 
 with open('data/GridModesAdjacentRealworld.pkl','rb') as f:
@@ -45,7 +45,20 @@ for i in range(12000):
     state_set.add(tuple(state[:2]))
     while not done:
         step_cnt += 1
-        action = int(actor_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax())
+
+        #选取动作避免重复
+        action_scores = actor_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
+        sorted_actions = torch.sort(action_scores, descending=True).indices.squeeze().tolist()
+        for action in sorted_actions:
+            if len(actions) == 0:
+                action = sorted_actions[0]
+            elif not (dxdy_dict[action][0] + dxdy_dict[actions[-1]][0] == 0 and dxdy_dict[action][1] +
+                      dxdy_dict[actions[-1]][1] == 0):
+                break
+            else:
+                action = sorted_actions[0]  # Fallback to the best action if no valid action is found
+        # action = int(actor_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).argmax())
+
         next_state, reward, done = env.step(action)
         actions.append(action)
         state = next_state
@@ -66,7 +79,7 @@ for i in range(12000):
 
     mahattan_dis = abs(end_to_start[0]) + abs(end_to_start[1])
     if step_cnt <= mahattan_dis:
-        match_rate = match_step / (total_step +0.001)
+        match_rate = match_step / (total_step +0.0001)
         match_rates.append(match_rate)
         modes.append(env.mode)
         num_finish += 1
