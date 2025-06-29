@@ -35,11 +35,11 @@ trajdata = pd.read_csv('data/data_train_upper_250624.csv')
 state_dim = 5
 action_dim = 4
 hidden_dim = 64
-lr = 0.003
-gamma = 0.99
+lr = 0.005
+gamma = 0.5
 batch_size = 256
 target_update = 50
-num_episodes = 30000
+num_episodes = 10001
 epsilon = 0.1
 num_train = 20
 
@@ -56,7 +56,7 @@ lower_model_config = {
     'state_dim': 12,
     'hidden_dim': 64,
     'action_dim': 8,
-    'model_path': './lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth',
+    'model_path': './lower_model/gaiReward_SAC_10000_eps_inrealmap_627.pth',
 }
 env = UpperEnv(mapdata, trajdata, trainid_start=0, train_num=12038, m=4,
                use_real_map=True, realmap_col=map_col, realmap_row=map_row,
@@ -64,8 +64,8 @@ env = UpperEnv(mapdata, trajdata, trainid_start=0, train_num=12038, m=4,
 upper_agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, target_update, device='cuda',
                   dqn_type="dueling", using_realmap=True)
 
-
 import csv
+
 
 def train_uppermodel(agent, env, episodes, agent_type, use_her=False):
     return_list = []
@@ -161,3 +161,36 @@ def train_uppermodel(agent, env, episodes, agent_type, use_her=False):
 
 # train_uppermodel(upper_agent, env, num_episodes, 'DQN', use_her=False)
 train_uppermodel(agent=upper_agent, env=env, episodes=num_episodes, agent_type='DQN', use_her=False)
+
+
+### main function ###
+# Function to save training configuration
+def save_training_config(file_name, config):
+    with open(file_name, 'w') as f:
+        for key, value in config.items():
+            f.write(f"{key}: {value}\n")
+
+
+# Define the configuration parameters
+config = {
+    'learning_rate': lr,
+    'gamma': gamma,
+    'batch_size': batch_size,
+    'num_episodes': num_episodes,
+    'epsilon': epsilon,
+    'target_update': target_update,
+    'buffer_size': buffer_size,
+    'minimal_size': minimal_size,
+    'num_train': num_train,
+    'hidden_dim': hidden_dim,
+    'map_row': map_row,
+    'map_col': map_col
+}
+
+# Save the configuration to a text file
+model_name = 'upper_model/DQN_{}_eps_in{}_{}.pth'.format(num_episodes, 'realmap',
+                                                         str(datetime.datetime.now().month) + str(
+                                                             datetime.datetime.now().day))
+
+config_file_name = model_name.replace('.pth', '.txt')
+save_training_config(config_file_name, config)

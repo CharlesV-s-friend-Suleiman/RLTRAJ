@@ -11,19 +11,19 @@ from rl_utils.value_based_rl_methods import VAnet
 from rl_utils.policy_based_rl_methods import Policy, PolicyWithConv
 from rl_utils.tools import sense_map
 
-test_type = 'DQN'  # or 'SAC'
+test_type = 'SAC'  # or 'SAC'
 map_row = 529
 map_col = 564
 state_dim = 12
 hidden_dim = 64
 action_dim = 8
 qnet = VAnet(state_dim, hidden_dim, action_dim)
-qnet.load_state_dict(torch.load('lower_model/DQN_30000_eps_inrealmap_628.pth'))
+# qnet.load_state_dict(torch.load('lower_model/DQN_30000_eps_inrealmap_628.pth'))
 
 test_with_conv = False
 # sac without conv
 actor_net = Policy(state_dim, hidden_dim, action_dim)
-actor_net.load_state_dict(torch.load('lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth'))
+actor_net.load_state_dict(torch.load('lower_model/gaiReward_SAC_10000_eps_inrealmap_627.pth'))
 
 # # sac with conv
 # actor_net = PolicyWithConv(state_dim, hidden_dim, action_dim,5*5)
@@ -36,11 +36,11 @@ mode_v_dict = {'TG': 300, 'GG': 120, 'GSD': 60, 'TS': 150}
 modelist = ['GSD', 'GG', 'TS', 'TG']
 
 # test TG:461/13,857/20,1128/16; GG: 4712/10,50/20; GSD:295/11,428/20 ; TS: 178/17,2577/15
-testid_start = 461
-num_tests = 20
+testid_start = 10
+num_tests = 14
 with open('data/GridModesAdjacentRealworld.pkl', 'rb') as f:
     mapdata = pickle.load(f)
-traj = pd.read_csv('data/data_lower_test.csv')
+traj = pd.read_csv('data/data_train_upper_250624.csv')
 trajmode = traj.loc[testid_start, 'mode']
 
 env = MapEnv(mapdata, traj, test_mode=True, testid_start=testid_start, test_num=num_tests,

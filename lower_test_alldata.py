@@ -14,7 +14,7 @@ hidden_dim = 64
 action_dim = 8
 
 actor_net = Policy(state_dim, hidden_dim, action_dim)
-actor_net.load_state_dict(torch.load('lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth'))
+actor_net.load_state_dict(torch.load('lower_model/gaiReward_SAC_10000_eps_inrealmap_627.pth'))
 actor_net.eval()
 
 with open('data/GridModesAdjacentRealworld.pkl','rb') as f:

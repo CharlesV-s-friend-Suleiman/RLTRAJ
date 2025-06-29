@@ -13,11 +13,11 @@ action_dim = 4
 hidden_dim = 64
 
 # num_tests is the end idx in train10000.csv
-num_test = 1000
-num_trajs =100
+num_test = 12038
+num_trajs = 3200
 action_dict = {0: 'GSD', 1: 'GG', 2: 'TS', 3: 'TG'}
 
-uppermodel_path = 'upper_model/DQN_30000_eps_inrealmap_628.pth'
+uppermodel_path = 'upper_model/DQN_5000_eps_inrealmap_629.pth'
 qnet = VAnet(state_dim, hidden_dim, action_dim)
 qnet.load_state_dict(torch.load(uppermodel_path))
 qnet.eval()
@@ -27,7 +27,7 @@ lower_config = {
     'state_dim': 12,
     'hidden_dim': 64,
     'action_dim': 8,
-    'model_path': 'lower_model/gaiReward_SAC_10000_eps_inrealmap_627——2.pth',
+    'model_path': 'lower_model/gaiReward_SAC_10000_eps_inrealmap_627.pth',
 }
 # lower_config = {
 #     'model_type': 'SAC',
@@ -42,7 +42,7 @@ with open('data/GridModesAdjacentRealworld.pkl', 'rb') as f:
     mapdata = pickle.load(f)
 traj = pd.read_csv('data/data_train_upper_250624.csv')
 
-upper_env = UpperEnv(mapdata, traj, test_mode=True, testid_start=-1, test_num=num_test,
+upper_env = UpperEnv(mapdata, traj, test_mode=True, testid_start=0, test_num=num_test,
                      use_real_map=True, realmap_row=map_row, realmap_col=map_col, lower_model_config=lower_config)
 
 test_results = []
@@ -58,7 +58,8 @@ totalroad_dict = {'GSD': 0, 'GG': 0, 'TS': 0, 'TG': 0}
 matchrated_dict_correct = {'GSD': [], 'GG': [], 'TS': [], 'TG': []}
 matchrated_dict_wrong = {'GSD': [], 'GG': [], 'TS': [], 'TG': []}
 
-wronglist = [[]]
+wronglist = []
+ResultList=[]
 
 for i in range(num_trajs):
     s = upper_env.reset()
@@ -73,10 +74,9 @@ for i in range(num_trajs):
             action = int(qnet(torch.tensor(s, dtype=torch.float32).unsqueeze(0)).argmax())
 
         # result evaluation
-        current_idx = (upper_env.traj_idx + upper_env.step_cnt)
+        current_idx = (upper_env.traj_idx + upper_env.step_cnt)-1
         current_record_idx = traj.loc[current_idx, 'ID']
-        x, y = traj.loc[current_idx, 'locx_o'], traj.loc[current_idx, 'locy_o'] # todo : check
-        print(action)
+        x, y = traj.loc[current_idx, 'locx_o'], traj.loc[current_idx, 'locy_o']  # todo : check
         s, reward, done = upper_env.step(action)
         totalamount_dict[traj.loc[current_idx, 'mode']] += 1
         accuracy_dict[traj.loc[current_idx, 'mode']] += int(upper_env.upper_mode == traj.loc[current_idx, 'mode'])
@@ -92,30 +92,39 @@ for i in range(num_trajs):
         else:
             matchrated_dict_wrong[upper_env.upper_mode].append(match / (total + 0.1))
             # record the wrong prediction id, upper mode, lower mode, match rate
-            wronglist.append([current_idx, upper_env.upper_mode, traj.loc[current_idx, 'mode'], match / (total + 0.1)])
+            wronglist.append([traj.loc[current_idx, 'ID'], upper_env.upper_mode, traj.loc[current_idx, 'mode'], match / (total + 0.1)])
+        ResultList.append([traj.loc[current_idx, 'ID'], upper_env.upper_mode, traj.loc[current_idx, 'mode'], match / (total + 0.1)])
 
-        print('ID', traj.loc[current_idx, 'ID'], upper_env.upper_mode, 'mode match rate:', match / (total + 0.1), match, total)
+        # print('ID', traj.loc[current_idx, 'ID'], upper_env.upper_mode, 'mode match rate:', match / (total + 0.1), match,
+        #       total)
         t_upper_dict[traj.loc[current_idx, 'mode']].append(upper_env.t_upper)
         t_lower_dict[upper_env.upper_mode].append(upper_env.t_lower)
 
 # save the wrong prediction id, upper mode, lower mode, match rate
 wronglist = pd.DataFrame(wronglist, columns=['ID', 'UpperMode', 'LowerMode', 'MatchRate'])
-wronglist.to_csv('data/wronglist.csv', index=False)
+ResultList = pd.DataFrame(ResultList, columns=['ID', 'PredictMode', 'TrueMode', 'MatchRate'])
+print()
+# print(wronglist)
+wronglist.to_csv('upper_model/wronglist_'+uppermodel_path[13:40]+'.csv', index=False)
+ResultList.to_csv('upper_model/ResultList_'+uppermodel_path[13:40]+'.csv', index=False)
 
+print()
 print('the accuracy of prediction is :', np.average(test_results), uppermodel_path)
 print('accuracy for each mode is: ')
 for key in accuracy_dict.keys():
-    print(key, accuracy_dict[key] / (0.1+ totalamount_dict[key]))
+    print(key, accuracy_dict[key] / (0.1 + totalamount_dict[key]))
 print('match rate for each mode is: ')
 for key in matchrated_dict.keys():
-    print(key, matchrated_dict[key] / (0.1+ totalroad_dict[key]))
+    print(key, matchrated_dict[key] / (0.1 + totalroad_dict[key]))
 
 # plot t_lower and t_upper distribution of each mode in different colors
 colors = {'GSD': 'blue', 'GG': 'green', 'TS': 'red', 'TG': 'purple'}
 fig, (ax1, ax2) = plt.subplots(2, 1, sharex="all", sharey="all", figsize=(10, 8))
 
+
 def cap_values(data, cap):
     return [min(x, cap) for x in data]
+
 
 cap_value = 25
 for label in t_upper_dict.keys():
@@ -140,8 +149,10 @@ plt.show()
 # plot the match rate of lower mode for each mode when correct prediction and wrong prediction
 fig, (ax1, ax2) = plt.subplots(2, 1, sharex="all", sharey="all", figsize=(10, 8))
 for label in matchrated_dict_correct.keys():
-    ax1.hist(matchrated_dict_correct[label], bins=100, alpha=0.5, color=colors[label], linestyle='dashed', label=f'{label} correct prediction')
-    ax2.hist(matchrated_dict_wrong[label], bins=100, alpha=0.5, color=colors[label], linestyle='solid', label=f'{label} wrong prediction')
+    ax1.hist(matchrated_dict_correct[label], bins=100, alpha=0.5, color=colors[label], linestyle='dashed',
+             label=f'{label} correct prediction')
+    ax2.hist(matchrated_dict_wrong[label], bins=100, alpha=0.5, color=colors[label], linestyle='solid',
+             label=f'{label} wrong prediction')
 ax1.set_ylabel('Frequency')
 ax1.set_title('Match rate of correct prediction')
 ax1.legend()
@@ -155,6 +166,7 @@ plt.tight_layout()
 plt.show()
 
 # wronglist analysis
+print()
 print('wronglist analysis')
 wrong_counts = wronglist.groupby(['UpperMode', 'LowerMode']).size().unstack(fill_value=0)
 
@@ -163,12 +175,15 @@ total_wrong_counts = wrong_counts.sum(axis=0)
 
 # Print the counts and rates for each LowerMode
 for lower_mode in ['GSD', 'GG', 'TS', 'TG']:
-    print(f"LowerMode: {lower_mode}")
-    for upper_mode, count in wrong_counts[lower_mode].items():
-        rate = count / total_wrong_counts[lower_mode]
-        print(f"{upper_mode}: {count} (Rate: {rate:.2%})")
-    print()
+    if lower_mode in wronglist['LowerMode'].values:
+        print(f"LowerMode: {lower_mode}")
+        for upper_mode, count in wrong_counts[lower_mode].items():
+            rate = count / total_wrong_counts[lower_mode]
+            print(f"{upper_mode}: {count} (Rate: {rate:.2%})")
+    else:
+        continue
 
+print()
 # Print total amounts and wrong amounts for each mode
 print('Total amounts for each mode:')
 for mode in ['GSD', 'GG', 'TS', 'TG']:
