@@ -109,8 +109,12 @@ class UpperEnv:
         upper_mode = action_mode_duels[action]
 
         # t_lower is the time cost of the lower model to reach the goal
+        # print(self.traj_idx , self.step_cnt)
+        if self.traj_idx + self.step_cnt >= self.mod:
+            self.traj_idx = 0
+
         lower_env = MapEnv(self.mapdata, self.traj, test_mode=True,
-                           testid_start=(self.traj_idx + self.step_cnt) % self.mod, test_num=self.train_num,
+                           testid_start=(self.traj_idx + self.step_cnt) % self.mod - 1, test_num=self.train_num,
                            use_real_map=True, realmap_row=self.rewalmap_row, realmap_col=self.realmap_col,
                            is_lower=True, dummy_mode=upper_mode)
         # print('upper' , 'step',self.step_cnt, 'traj+start id ',self.traj_idx)
@@ -119,7 +123,7 @@ class UpperEnv:
         lower_set = set()
         lower_set.add(tuple(lower_state[:2]))
         lower_step_cnt = 0
-        lower_path = []
+        lower_path = [lower_state[:2] + lower_env.delta]
         self.is_match_compute_tuple = [0, 0]  # total, match
 
         while not lower_done:
@@ -135,12 +139,12 @@ class UpperEnv:
             elif self.lower_type == 'SAC':
                 lower_action = int(
                     self.lower_agent(torch.tensor(lower_state, dtype=torch.float32).unsqueeze(0)).argmax())
-            # 考虑是否存在重复或者循环路径
             lower_next_state, lower_reward, lower_done = lower_env.step(lower_action)
             # print("    lower_next_state:", lower_next_state[:4], "lower_reward:", lower_reward, "lower_done:", lower_done)
             lower_state = lower_next_state
             lower_set.add(tuple(lower_state[:2]))
             lower_path.append(lower_state[:2] + lower_env.delta)
+        # print(lower_path)
         t_lower = 0  # min
         v_expected = processed_data[upper_mode]['mean'] / 60  # convert to km/min
         v_rural = 0.5  # 0.5km/min=30km/h
@@ -149,29 +153,26 @@ class UpperEnv:
             x, y = int(coord[0]), int(coord[1])
             self.is_match_compute_tuple[0] += 1
             if self.mapmatrice[upper_mode][x][y] == 0:
-                t_lower += (abs(lower_path[i][0] - lower_path[i - 1][0]) + abs(
-                    lower_path[i][1] - lower_path[i - 1][1])) / v_rural
+                t_lower += ((lower_path[i][0] - lower_path[i - 1][0]) ** 2 + (
+                        lower_path[i][1] - lower_path[i - 1][1]) ** 2) ** 0.5 / v_rural
                 # print('lower path is blocked, and travel in rural area', x, y)
             else:
                 self.is_match_compute_tuple[1] += 1
-                t_lower += (abs(lower_path[i][0] - lower_path[i - 1][0]) + abs(
-                    lower_path[i][1] - lower_path[i - 1][1])) / v_expected
+                # t_lower += (abs(lower_path[i][0] - lower_path[i - 1][0]) + abs(
+                #     lower_path[i][1] - lower_path[i - 1][1])) / v_expected
+                t_lower += ((lower_path[i][0] - lower_path[i - 1][0])**2 + (
+                    lower_path[i][1] - lower_path[i - 1][1])**2 )**0.5 / v_expected
 
         # t_upper calculated by the given data
-        idx = (self.traj_idx + self.step_cnt) % self.mod
-        if idx == 0:
-            t_upper = 0
-        else:
-            # t_upper = max(0, self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod + 1, 'time'] \
-            #               - self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod, 'time'])
-            t_upper = max(0, self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod, 'time'])
+        t_upper = max(0, self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, 'time'])
 
-        if self.isTest:
-            print('in upper iteration ', self.step_cnt, 't_lower:', t_lower, 't_upper:', t_upper, 'predict mode',
-                  modelist[action])
+        # if self.isTest:
+        #     print('in upper iteration ', self.step_cnt, 't_lower:', t_lower, 't_upper:', t_upper, 'predict mode',
+        #           modelist[action])
 
         # calculate the difference t_lower and t_upper in each step, record the percentage of traj in mode
-        reward = -float(abs(t_lower - t_upper)) / max(t_lower, t_upper)  # /(max(t_lower, t_upper) + 1) # +1 avoid div0
+        reward = -float(abs(t_lower - t_upper)) / max(t_lower,
+                                                      t_upper)  # TODO# /(max(t_lower, t_upper) + 1) # +1 avoid div0
         match_rate = self.is_match_compute_tuple[1] / (self.is_match_compute_tuple[0] + 0.1) if (
                 lower_step_cnt <= lower_env.max_step) else 0
         reward *= (1 - match_rate)
@@ -179,7 +180,7 @@ class UpperEnv:
         self.t_upper = t_upper
 
         # update state of the upper model
-        self.step_cnt += 1
+
         self.r_avg += (reward - self.r_avg) / (self.step_cnt + 1)
         # print('current reward:', reward, 'avg reward:', self.r_avg)
 
@@ -187,9 +188,10 @@ class UpperEnv:
         # embedding the map info to the state
         # print('upper step',self.step_cnt, 'traj+start id-1 ',self.traj_idx,'curidx',self.traj_idx+self.step_cnt-1,
         #      'maxstep',self.max_step, 'coord', self.traj.loc[self.traj_idx+self.step_cnt-1,'locx'], self.traj.loc[self.traj_idx+self.step_cnt-1,'locy'])
-        start_pos = tuple(self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, ['locx_o', 'locy_o']])  # TODO 这里要改
+        start_pos = tuple(
+            self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, ['locx_o', 'locy_o']])  # TODO 这里要改
         goal_pos = tuple(self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, ['locx_d', 'locy_d']])
-
+        self.upper_mode = upper_mode
         self.rts_nums = [0, 0, 0, 0]
 
         for mode_idx in range(4):
@@ -213,7 +215,8 @@ class UpperEnv:
 
         # using v_avg as state, v_avg_upper = distance/delta_t
         self.v_avg = 0
-        v_upper = float(abs(goal_pos[0] - start_pos[0]) + abs(goal_pos[1] - start_pos[1])) / (t_upper + 0.000001)  # km/min
+        v_upper = float(abs(goal_pos[0] - start_pos[0]) + abs(goal_pos[1] - start_pos[1])) / (
+                    t_upper + 0.000001)  # km/min
         self.v_avg += (v_upper - self.v_avg) / (self.step_cnt + 1)
 
         cos = 1
@@ -235,8 +238,9 @@ class UpperEnv:
 
         # relative_pos = [goal_pos[0]-start_pos[0], goal_pos[1]-start_pos[1]]
         relative_dis = ((goal_pos[0] - start_pos[0]) ** 2 + (goal_pos[1] - start_pos[1]) ** 2) ** 0.5
-
-        return np.array([relative_dis] + self.rts_nums), reward, done
+        t = self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, 'time']
+        self.step_cnt += 1
+        return np.array([relative_dis / (t + 0.001)] + self.rts_nums), reward, done
 
     def step_with20action(self, action: int):
         """
@@ -395,7 +399,7 @@ class UpperEnv:
 
         self.r_avg = 0
         self.step_cnt = 0
-        self.max_step = 0
+        self.max_step = 1
 
         self.traj_idx += 1
         i = self.traj_idx
@@ -406,25 +410,27 @@ class UpperEnv:
         # print('upper reset', 'maxstep',self.max_step,'trajstart', self.traj_idx)
 
         # embedding the map info to the state
-        start_pos = tuple(self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod, ['locx_o', 'locy_o']])
-        goal_pos = tuple(self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod + 1, ['locx_o', 'locy_o']])
-        t = 60 * (self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod + 1, 'time'] - self.traj.loc[
-            (self.traj_idx + self.step_cnt) % self.mod, 'time'])
+        start_pos = tuple(self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, ['locx_o', 'locy_o']])
+        goal_pos = tuple(self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, ['locx_d', 'locy_d']])
+        t = self.traj.loc[(self.traj_idx + self.step_cnt) % self.mod - 1, 'time']
         self.rts_nums = [0, 0, 0, 0]
 
         for mode_idx in range(4):
             x1, y1 = start_pos
             x2, y2 = goal_pos
             for neighbor in get_neighbor(self.mapmatrice[modelist[mode_idx]], x1, y1):
-                self.rts_nums[mode_idx] += neighbor
+                if neighbor == 1:
+                    self.rts_nums[mode_idx] = neighbor
             for neighbor in get_neighbor(self.mapmatrice[modelist[mode_idx]], x2, y2):
-                self.rts_nums[mode_idx] += neighbor
+                if neighbor == 1:
+                    self.rts_nums[mode_idx] = neighbor
+
         self.v_avg = 0
 
         relative_pos = [goal_pos[0] - start_pos[0], goal_pos[1] - start_pos[1]]
-        relative_dis = ((goal_pos[0] - start_pos[0]) ** 2 + (goal_pos[1] - start_pos[1]) ** 2) ** 0.5
-        # relative_dis = abs(goal_pos[0]-start_pos[0]) + abs(goal_pos[1]-start_pos[1])
-        return np.array([relative_dis / (t + 0.1)] + self.rts_nums)
+        # relative_dis = ((goal_pos[0] - start_pos[0]) ** 2 + (goal_pos[1] - start_pos[1]) ** 2) ** 0.5
+        relative_dis = abs(goal_pos[0] - start_pos[0]) + abs(goal_pos[1] - start_pos[1])
+        return np.array([relative_dis / (t + 0.001)] + self.rts_nums)
 
 
 class MapEnv:
@@ -467,7 +473,7 @@ class MapEnv:
         else:
             mod = len(self.traj)
             start_id = 0
-
+        # print('reset map env', 'traj_cnt', self.traj_cnt, 'start_id', start_id, 'mod', mod)
         locx_start = float(self.traj.loc[start_id + self.traj_cnt % mod, 'locx_o'])
         locy_start = float(self.traj.loc[start_id + self.traj_cnt % mod, 'locy_o'])
         locx_end = float(self.traj.loc[start_id + self.traj_cnt % mod, 'locx_d'])
