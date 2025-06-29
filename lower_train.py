@@ -35,7 +35,7 @@ from rl_utils.policy_based_rl_methods import SAC, SACWithConv
 buffer_size = 4096
 map_row = 529
 map_col = 564
-with open ('data/GridModesAdjacentRealworld.pkl','rb') as f:
+with open('data/GridModesAdjacentRealworld.pkl', 'rb') as f:
     mapdata = pickle.load(f)
 shuffle_traj = pd.read_csv('data/data_lower_train_random.csv')
 
@@ -44,7 +44,7 @@ return_list = []
 
 # set the hyperparameters for all methods
 gamma = .98
-minimal_size = 1024
+minimal_size = 0
 batch_size = 256
 device = torch.device("cuda")
 hidden_dim = 64
@@ -52,20 +52,21 @@ env = MapEnv(mapdata, shuffle_traj, use_real_map=True, realmap_row=map_row, real
 
 # set the device & hyperparameters for DQN
 lr = 0.001
-num_episodes = 12000
+num_episodes = 3000
 num_train = 20
 epsilon = .05
 target_update = 50
 
 # set the device & hyperparameters for SAC
-actor_lr = 1e-3
-critic_lr = 1e-2
-alpha_lr = 1e-2
+actor_lr = 1e-4
+critic_lr = 1e-3
+alpha_lr = 1e-3
 tau = 0.005
 target_entropy = -1
 
 np.random.seed(42)
 torch.manual_seed(42)
+
 
 # start training
 def train(agent, env, episodes, agent_type, use_her, with_conv, **kwargs):
@@ -75,43 +76,50 @@ def train(agent, env, episodes, agent_type, use_her, with_conv, **kwargs):
     critic_losses = []
     actor_losses = []
 
+    import csv
+
+    # 初始化 CSV 数据列表
+    csv_data = []
+
     for i in range(10):
         with tqdm(total=int(episodes / 10), desc='Iteration {}'.format(i)) as pbar:
             for e in range(int(episodes / 10)):
                 ep += 1
                 state = env.reset()
-                agent.visited_states.clear()  # Clear the visited states set
+                agent.visited_states.clear()  # 清空访问过的状态
                 traj = TrainTrajwithMapinfo(state, state[:2] + env.delta) if with_conv else TrainTraj(state)
                 episode_return = 0
                 done = False
 
-                # sample trajectory
+                # 采样轨迹
                 while not done:
                     env_max_step = env.max_step
                     if with_conv:
                         agent.set_mode(env.mode)
-                        action = agent.take_action_with_conv(state, state[:2]+env.delta)
+                        action = agent.take_action_with_conv(state, state[:2] + env.delta)
                     else:
                         action = agent.take_action(state)  # epsilon-greedy with decay
                     state, reward, done = env.step(action)
                     episode_return += reward
                     if with_conv:
-                        cur_pos = state[:2] + env.delta # [x y]
+                        cur_pos = state[:2] + env.delta  # [x y]
                         traj.store_step_withmapinfo(state, action, reward, env_max_step, cur_pos, done)
                     else:
                         traj.store_step(state, action, reward, env_max_step, done)
                 buffer.add_traj(traj)
                 return_list.append(episode_return)
 
-                # use HER to sample a batch of samples
+                # 准备 CSV 数据
+                if agent_type == 'SAC':
+                    row = [ep, episode_return, None, None]  # 默认损失值为 None
+                elif agent_type == 'DQN':
+                    row = [ep, episode_return, None]  # 默认损失值为 None
                 if buffer.size() >= minimal_size:
                     episode_losses = []
                     episode_critic_losses = []
                     episode_actor_losses = []
                     for _ in range(num_train):
                         loss = 0
-                        critic_loss = 0
-                        actor_loss = 0
                         if with_conv:
                             transition_dict = buffer.sample_with_mapinfo(batch_size, use_her=use_her)
                         else:
@@ -127,15 +135,33 @@ def train(agent, env, episodes, agent_type, use_her, with_conv, **kwargs):
                     if agent_type == 'SAC':
                         critic_losses.append(np.mean(episode_critic_losses))
                         actor_losses.append(np.mean(episode_actor_losses))
+                        row[2] = np.mean(episode_critic_losses)  # 更新 critic_loss
+                        row[3] = np.mean(episode_actor_losses)  # 更新 actor_loss
                     elif agent_type == 'DQN':
                         losses.append(np.mean(episode_losses))
+                        row[2] = np.mean(episode_losses)  # 更新 DQN 损失
 
                 if (e + 1) % 10 == 0:
                     pbar.set_postfix({
                         'episode': '%d' % (episodes / 10 * i + e + 1),
                         'return': '%.3f' % np.mean(return_list[-10:])
                     })
+
+                csv_data.append(row)  # 添加行到 CSV 数据
                 pbar.update(1)
+
+    # 写入 CSV 文件
+    csv_file_name = 'lower_model/{}_{}_eps_in{}_{}_training_results.csv'.format(agent_type, episodes, 'realmap',
+                                                                                str(datetime.datetime.now().month) + str(
+                                                                                    datetime.datetime.now().day))
+    with open(csv_file_name, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        if agent_type == 'SAC':
+            writer.writerow(['Episode', 'Return', 'Critic Loss', 'Actor Loss'])  # 写入表头
+        elif agent_type == 'DQN':
+            writer.writerow(['Episode', 'Return', 'Loss'])  # 写入表头
+        writer.writerows(csv_data)
+    print(f"结果已保存到 {csv_file_name}")
 
     # plot the return and losses
     averge_return_per10 = []
@@ -156,47 +182,56 @@ def train(agent, env, episodes, agent_type, use_her, with_conv, **kwargs):
     ax2.set_ylabel('Loss', color=color)  # we already handled the x-label with ax1
 
     if agent_type == 'SAC':
-        ax2.plot(range(minimal_size, minimal_size + len(critic_losses)), critic_losses, color=color, label='Critic Loss')
-        ax2.plot(range(minimal_size, minimal_size + len(actor_losses)), actor_losses, color='tab:green', label='Actor Loss')
+        ax2.plot(range(minimal_size, minimal_size + len(critic_losses)), critic_losses, color=color,
+                 label='Critic Loss')
+        ax2.plot(range(minimal_size, minimal_size + len(actor_losses)), actor_losses, color='tab:green',
+                 label='Actor Loss')
     elif agent_type == 'DQN':
-        ax2.plot(range(minimal_size, minimal_size + len(losses)), losses, color=color, label='Average Q-Loss per 10 episodes')
+        ax2.plot(range(minimal_size, minimal_size + len(losses)), losses, color=color,
+                 label='Average Q-Loss per 10 episodes')
 
     ax2.tick_params(axis='y', labelcolor=color)
 
     fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.title('{} with HER on {}'.format(agent_type, 'RealMap'))
+    plt.savefig('lower_model/{}_{}_eps_in{}_{}_Reward & Loss.png'.format(agent_type, episodes, 'realmap',
+                                                                         str(datetime.datetime.now().month) + str(
+                                                                             datetime.datetime.now().day)))
     plt.show()
 
     if agent_type == 'DQN':
         torch.save(agent.target_qnet.state_dict(),
                    'lower_model/{}_{}_eps_in{}_{}.pth'.format(agent_type, episodes, 'realmap',
-                                                        str(datetime.datetime.now().month) + str(
-                                                            datetime.datetime.now().day)))
+                                                              str(datetime.datetime.now().month) + str(
+                                                                  datetime.datetime.now().day)))
     if agent_type == 'SAC':
         torch.save(agent.actor.state_dict(),
                    'lower_model/{}_{}_eps_in{}_{}.pth'.format(agent_type, episodes, 'realmap',
-                                                        str(datetime.datetime.now().month) + str(
-                                                            datetime.datetime.now().day)))
+                                                              str(datetime.datetime.now().month) + str(
+                                                                  datetime.datetime.now().day)))
     print('Model saved successfully!')
 
     return None
+
+
 #
 # DQN_agent = DQN(12, hidden_dim, 8, lr, gamma, epsilon, target_update, device,
 #                 "dueling",using_realmap=True)
 
 # normal sac
 SAC_agent = SAC(12, hidden_dim, 8,
-                actor_lr = actor_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
-                target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
-                using_realmap=True,mapdata =env.mapdata)
+                actor_lr=actor_lr, critic_lr=critic_lr, alpha_lr=alpha_lr,
+                target_entropy=target_entropy, gamma=gamma, tau=tau, device=device,
+                using_realmap=True, mapdata=env.mapdata)
 
 # SAC_agent = SACWithConv(12, hidden_dim, 8,
 #                 actor_lr = actor_lr, critic_lr=critic_lr,alpha_lr=alpha_lr,
 #                 target_entropy= target_entropy, gamma = gamma, tau=tau,device = device,
 #                 using_realmap=True,mapdata =env.mapdata)
 
-#train(DQN_agent, env, num_episodes, 'DQN', use_her=True)
-train(SAC_agent, env, num_episodes, 'SAC', use_her=True, with_conv = False)
+# train(DQN_agent, env, num_episodes, 'DQN', use_her=True, with_conv = False)
+train(SAC_agent, env, num_episodes, 'SAC', use_her=True, with_conv=False)
+
 
 ### main function ###
 # Function to save training configuration
@@ -204,6 +239,7 @@ def save_training_config(file_name, config):
     with open(file_name, 'w') as f:
         for key, value in config.items():
             f.write(f"{key}: {value}\n")
+
 
 # Define the configuration parameters
 config = {
@@ -228,8 +264,8 @@ config = {
 }
 
 # Save the configuration to a text file
-model_name = 'lower_model/{}_eps_in{}_{}.pth'.format(num_episodes, 'realmap',
-                                                        str(datetime.datetime.now().month) + str(
-                                                            datetime.datetime.now().day))
+model_name ='lower_model/SAC_{}_eps_in{}_{}.pth'.format(num_episodes, 'realmap',
+                                                              str(datetime.datetime.now().month) + str(
+                                                                  datetime.datetime.now().day))
 config_file_name = model_name.replace('.pth', '.txt')
 save_training_config(config_file_name, config)
